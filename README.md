@@ -1,5 +1,8 @@
 # Doctor Patient Calendar Appointment Management System - NextJS
 
+![Screenshot 2025-06-26 at 17 07 38](https://github.com/user-attachments/assets/eedf5a4c-5cf9-4cea-bbd0-878660a9ab15) ![Screenshot 2025-06-26 at 17 09 03](https://github.com/user-attachments/assets/fe0ad75e-c74a-4a7a-8c47-30ef1cf577f2) ![Screenshot 2025-06-26 at 17 09 25](https://github.com/user-attachments/assets/366dea4d-e0df-4b60-a383-919b8504eba3) ![Screenshot 2025-06-26 at 17 09 40](https://github.com/user-attachments/assets/7d2f3a91-a868-4e35-8542-e180581a612e) ![Screenshot 2025-06-26 at 17 10 49](https://github.com/user-attachments/assets/5e2c782c-3f9d-42a8-808a-c73972d2c30e) <img width="897" alt="Screenshot 2025-06-25 at 00 31 44" src="https://github.com/user-attachments/assets/47e64d59-dde8-4d2c-912c-b1e021367359" />
+
+
 A modern, full-featured calendar and appointment management web application built with Next.js, React, Supabase, and Tailwind CSS. Designed for healthcare, clinics, or any organization needing robust scheduling, filtering, and client management, it features multiple calendar views, instant search, advanced filtering, and a clean, responsive UI.
 
 **Live-Demo:** <https://doctor-patient-calendar-appointment.vercel.app/>

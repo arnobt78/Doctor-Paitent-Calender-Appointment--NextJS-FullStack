@@ -27,7 +27,11 @@ export default function AppointmentDialogTrigger({
 
   return (
     <>
-      {trigger && <span onClick={() => setOpen(true)}>{trigger}</span>}
+      {trigger && (
+        <span onClick={() => setOpen(true)} className="cursor-pointer">
+          {trigger}
+        </span>
+      )}
       <AppointmentDialog
         isOpen={open}
         onOpenChange={handleOpenChange}

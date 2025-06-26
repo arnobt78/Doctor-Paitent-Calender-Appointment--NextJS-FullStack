@@ -38,16 +38,18 @@ export default function CalendarHeader({
           variant="outline"
           onClick={handlePrev}
           disabled={view === "Liste"}
+          className="cursor-pointer hover:bg-gray-100 transition-colors"
         >
           ←
         </Button>
-        <div className="text-lg font-medium">
+        <div className="text-lg font-medium ">
           {format(currentDate, "dd. MMMM yyyy", { locale: de })}
         </div>
         <Button
           variant="outline"
           onClick={handleNext}
           disabled={view === "Liste"}
+          className="cursor-pointer hover:bg-gray-100 transition-colors"
         >
           →
         </Button>
@@ -59,6 +61,7 @@ export default function CalendarHeader({
               key={v}
               onClick={() => setView(v)}
               variant={v === view ? "default" : "outline"}
+              className="cursor-pointer transition-colors"
             >
               {v}
             </Button>

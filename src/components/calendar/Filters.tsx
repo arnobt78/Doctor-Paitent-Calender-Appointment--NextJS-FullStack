@@ -1,49 +1,38 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabaseClient";
 import { Category, Patient } from "@/types/types";
 
 type FiltersProps = {
-  onChange: (filters: {
-    category: string | null;
-    patient: string | null;
-    date: string | null;
-    status: string | null;
-  }) => void;
+  category: string | null;
+  setCategory: (v: string | null) => void;
+  patient: string | null;
+  setPatient: (v: string | null) => void;
+  date: string | null;
+  setDate: (v: string | null) => void;
+  status: string | null;
+  setStatus: (v: string | null) => void;
+  categories: Category[];
+  patients: Patient[];
 };
 
-export default function Filters({ onChange }: FiltersProps) {
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [patients, setPatients] = useState<Patient[]>([]);
-
-  const [category, setCategory] = useState<string | null>(null);
-  const [patient, setPatient] = useState<string | null>(null);
-  const [date, setDate] = useState<string | null>(null);
-  const [status, setStatus] = useState<string | null>(null);
-
-  useEffect(() => {
-    const fetchData = async () => {
-      const { data: catData } = await supabase.from("categories").select("*");
-      const { data: patData } = await supabase.from("patients").select("*");
-      setCategories(catData || []);
-      setPatients(patData || []);
-    };
-
-    fetchData();
-  }, []);
-
-  useEffect(() => {
-    onChange({ category, patient, date, status });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [category, patient, date, status]);
-
+export default function Filters({
+  category,
+  setCategory,
+  patient,
+  setPatient,
+  date,
+  setDate,
+  status,
+  setStatus,
+  categories,
+  patients,
+}: FiltersProps) {
   return (
     <div className="flex flex-wrap gap-4 my-4">
       <select
-        className="border px-3 py-1 rounded"
+        className="border px-3 py-1 rounded cursor-pointer hover:bg-gray-100 transition-colors"
         onChange={(e) => setCategory(e.target.value || null)}
-        defaultValue=""
+        value={category || ""}
       >
         <option value="">Kategorie</option>
         {categories.map((c) => (
@@ -54,9 +43,9 @@ export default function Filters({ onChange }: FiltersProps) {
       </select>
 
       <select
-        className="border px-3 py-1 rounded"
+        className="border px-3 py-1 rounded cursor-pointer hover:bg-gray-100 transition-colors"
         onChange={(e) => setPatient(e.target.value || null)}
-        defaultValue=""
+        value={patient || ""}
       >
         <option value="">Klient</option>
         {patients.map((p) => (
@@ -68,14 +57,15 @@ export default function Filters({ onChange }: FiltersProps) {
 
       <input
         type="date"
-        className="border px-3 py-1 rounded"
+        className="border px-3 py-1 rounded hover:bg-gray-100 transition-colors"
         onChange={(e) => setDate(e.target.value || null)}
+        value={date || ""}
       />
 
       <select
-        className="border px-3 py-1 rounded"
+        className="border px-3 py-1 rounded cursor-pointer hover:bg-gray-100 transition-colors"
         onChange={(e) => setStatus(e.target.value || null)}
-        defaultValue=""
+        value={status || ""}
       >
         <option value="">Status</option>
         <option value="pending">Offen</option>

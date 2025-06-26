@@ -28,6 +28,7 @@ import {
 } from "react-icons/fi";
 import { MdCategory } from "react-icons/md";
 import AppointmentListSkeleton from "./AppointmentListSkeleton";
+import SearchBar from "./SearchBar";
 
 const bgColors = [
   "#F59E0B",
@@ -133,21 +134,35 @@ function getDateTag(date: Date) {
 
 export default function AppointmentList() {
   const [appointments, setAppointments] = useState<FullAppointment[]>([]);
-  const [filters, setFilters] = useState({
-    category: null as string | null,
-    patient: null as string | null,
-    date: null as string | null,
-    status: null as string | null,
-  });
+  const [category, setCategory] = useState<string | null>(null);
+  const [patient, setPatient] = useState<string | null>(null);
+  const [date, setDate] = useState<string | null>(null);
+  const [status, setStatus] = useState<string | null>(null);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [patients, setPatients] = useState<Patient[]>([]);
+  const [relatives, setRelatives] = useState<Relative[]>([]);
+  const [loading, setLoading] = useState(true);
   const { currentDate } = useDateContext();
   const scrollRef = useRef<HTMLDivElement>(null);
   const [editAppt, setEditAppt] = useState<FullAppointment | null>(null);
   const [editOpen, setEditOpen] = useState(false);
-  const [patients, setPatients] = useState<Patient[]>([]);
-  const [relatives, setRelatives] = useState<Relative[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
 
-  // FIX: fetchAppointments must be stable and not re-created on every render
+  // Fetch categories, patients, relatives on mount
+  useEffect(() => {
+    (async () => {
+      const { data: catData } = await supabase.from("categories").select("*");
+      setCategories(catData || []);
+      const { data: patData } = await supabase.from("patients").select("*");
+      setPatients(patData || []);
+      const { data: rels } = await supabase.from("relatives").select("*");
+      setRelatives(rels || []);
+    })();
+  }, []);
+
+  // Compose filters object for query
+  const filters = { category, patient, date, status };
+
   const fetchAppointments = useCallback(async () => {
     setLoading(true);
     let query = supabase
@@ -156,9 +171,8 @@ export default function AppointmentList() {
         "*, category:category(*), patient:patients(*), appointment_assignee:appointment_assignee(*), activities:activities(*)"
       )
       .order("start", { ascending: true });
-    // Only filter by date if a date is selected in filters
-    if (filters.date) {
-      const day = new Date(filters.date);
+    if (date) {
+      const day = new Date(date);
       day.setHours(0, 0, 0, 0);
       const dayStart = new Date(day);
       const dayEnd = new Date(day);
@@ -167,27 +181,17 @@ export default function AppointmentList() {
         .gte("start", dayStart.toISOString())
         .lte("start", dayEnd.toISOString());
     }
-    if (filters.category) query = query.eq("category", filters.category);
-    if (filters.patient) query = query.eq("patient", filters.patient);
-    if (filters.status) query = query.eq("status", filters.status);
+    if (category) query = query.eq("category", category);
+    if (patient) query = query.eq("patient", patient);
+    if (status) query = query.eq("status", status);
     const { data } = await query;
     setAppointments(data as FullAppointment[]);
     setLoading(false);
-  }, [filters.category, filters.patient, filters.date, filters.status]);
+  }, [category, patient, date, status]);
 
   useEffect(() => {
     fetchAppointments();
   }, [fetchAppointments, currentDate]);
-
-  useEffect(() => {
-    // Fetch all patients and relatives for assignee name mapping
-    (async () => {
-      const { data: pats } = await supabase.from("patients").select("*");
-      const { data: rels } = await supabase.from("relatives").select("*");
-      setPatients(pats || []);
-      setRelatives(rels || []);
-    })();
-  }, []);
 
   const toggleStatus = async (id: string, newStatus: string) => {
     await supabase
@@ -209,6 +213,50 @@ export default function AppointmentList() {
 
   const isEmpty = appointments.length === 0;
 
+  // Filtered appointments based on search
+  const filteredAppointments = appointments.filter((appt) => {
+    if (!search.trim()) return true;
+    const lower = search.toLowerCase();
+    // Helper to check if a string includes the search
+    const match = (val?: string) => !!val && val.toLowerCase().includes(lower);
+    // Check all relevant fields
+    // Patient name: handle both patient_data and patient as object
+    let patientNameMatch = false;
+    if (appt.patient_data) {
+      patientNameMatch =
+        !!match(appt.patient_data.firstname) ||
+        !!match(appt.patient_data.lastname) ||
+        !!match(appt.patient_data.email);
+    } else if (
+      appt.patient &&
+      typeof appt.patient === "object" &&
+      "firstname" in appt.patient &&
+      "lastname" in appt.patient
+    ) {
+      const patientObj = appt.patient as {
+        firstname?: string;
+        lastname?: string;
+      };
+      patientNameMatch =
+        !!match(patientObj.firstname) || !!match(patientObj.lastname);
+    }
+    return (
+      match(appt.title) ||
+      match(appt.notes) ||
+      match(appt.location) ||
+      match(appt.status) ||
+      (appt.category_data &&
+        (match(appt.category_data.label) ||
+          match(appt.category_data.description))) ||
+      patientNameMatch ||
+      (appt.appointment_assignee &&
+        appt.appointment_assignee.some((a) => match(a.user))) ||
+      (appt.activities &&
+        appt.activities.some((a) => match(a.type) || match(a.content))) ||
+      (appt.attachements && appt.attachements.some((a) => match(a)))
+    );
+  });
+
   // Helper to handle edit dialog close and refresh
   const handleEditSuccess = () => {
     setEditAppt(null);
@@ -228,15 +276,15 @@ export default function AppointmentList() {
   useEffect(() => {
     (async () => {
       // Log Supabase env using environment variables (not protected properties)
-      console.log(
-        "[DEBUG] SUPABASE_URL:",
-        process.env.NEXT_PUBLIC_SUPABASE_URL
-      );
+      // console.log(
+      //   "[DEBUG] SUPABASE_URL:",
+      //   process.env.NEXT_PUBLIC_SUPABASE_URL
+      // );
 
-      console.log(
-        "[DEBUG] SUPABASE_ANON_KEY:",
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-      );
+      // console.log(
+      //   "[DEBUG] SUPABASE_ANON_KEY:",
+      //   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+      // );
       // List all buckets
       const { data: buckets, error } = await supabase.storage.listBuckets();
       if (error) {
@@ -248,7 +296,7 @@ export default function AppointmentList() {
   }, []);
 
   // Group appointments by date (descending)
-  const grouped = groupAppointmentsByDate(appointments);
+  const grouped = groupAppointmentsByDate(filteredAppointments);
 
   return loading ? (
     <AppointmentListSkeleton />
@@ -258,8 +306,44 @@ export default function AppointmentList() {
       <h2 className="text-2xl font-semibold tracking-tight text-gray-800 mb-2">
         Terminliste
       </h2>
-      <Filters onChange={setFilters} />
-
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:gap-4">
+        <div className="flex-1 min-w-[220px]">
+          <SearchBar value={search} setValue={setSearch} />
+        </div>
+        <div className="flex flex-wrap gap-4 items-center w-full sm:w-auto">
+          <Filters
+            category={category}
+            setCategory={setCategory}
+            patient={patient}
+            setPatient={setPatient}
+            date={date}
+            setDate={setDate}
+            status={status}
+            setStatus={setStatus}
+            categories={categories}
+            patients={patients}
+          />
+          <Button
+            variant="outline"
+            className="ml-2 bg-black text-white hover:bg-gray-400 cursor-pointer"
+            onClick={() => {
+              setCategory(null);
+              setPatient(null);
+              setDate(null);
+              setStatus(null);
+              setSearch(""); // Clear search bar as well
+            }}
+          >
+            Reset
+          </Button>
+        </div>
+      </div>
+      {/* Only show the 'Kein Treffer gefunden' message if there is a search term */}
+      {filteredAppointments.length === 0 && search.trim() && (
+        <div className="text-center text-gray-500 mt-8 text-sm">
+          ❌ Kein Treffer gefunden für Ihre Suche nach &quot;{search}&quot;
+        </div>
+      )}
       {isEmpty && (
         <div className="text-center text-gray-500 mt-8 text-sm">
           ❌ Keine Termine gefunden für die ausgewählten Filter.
@@ -554,7 +638,7 @@ export default function AppointmentList() {
                       <label className="flex flex-col items-center gap-1">
                         <input
                           type="checkbox"
-                          className="mb-1 accent-green-600 w-5 h-5"
+                          className="mb-1 accent-green-600 w-5 h-5 cursor-pointer hover:ring-2 hover:ring-green-300"
                           checked={isDone}
                           onChange={() =>
                             toggleStatus(appt.id, isDone ? "pending" : "done")
@@ -567,7 +651,7 @@ export default function AppointmentList() {
                       <Button
                         size="icon"
                         variant="outline"
-                        className="rounded-full border-gray-300"
+                        className="rounded-full border-gray-300 cursor-pointer hover:bg-gray-100"
                         onClick={() => handleEdit(appt)}
                         aria-label="Bearbeiten"
                       >
@@ -576,7 +660,7 @@ export default function AppointmentList() {
                       <Button
                         size="icon"
                         variant="ghost"
-                        className="rounded-full"
+                        className="rounded-full cursor-pointer hover:bg-red-100"
                         onClick={() => deleteAppt(appt.id)}
                         aria-label="Löschen"
                       >

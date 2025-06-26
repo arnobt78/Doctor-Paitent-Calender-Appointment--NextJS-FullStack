@@ -519,7 +519,7 @@ export default function MonthView() {
             <Button
               size="sm"
               variant="ghost"
-              className="ml-auto bg-gray-200 hover:bg-gray-300 transition"
+              className="ml-auto bg-gray-200 hover:bg-gray-300 transition cursor-pointer"
               onClick={() => setSelectedDate(null)}
             >
               Schließen
@@ -672,7 +672,7 @@ export default function MonthView() {
                     <label className="flex flex-col items-center gap-1">
                       <input
                         type="checkbox"
-                        className="mb-1 accent-green-600 w-5 h-5"
+                        className="mb-1 accent-green-600 w-5 h-5 cursor-pointer"
                         checked={isDone}
                         onChange={() =>
                           toggleStatus(a.id, isDone ? "pending" : "done")
@@ -685,7 +685,7 @@ export default function MonthView() {
                     <Button
                       size="icon"
                       variant="outline"
-                      className="rounded-full border-gray-300"
+                      className="rounded-full border-gray-300 cursor-pointer"
                       onClick={() => setEditAppt(a)}
                       aria-label="Bearbeiten"
                     >
@@ -694,7 +694,7 @@ export default function MonthView() {
                     <Button
                       size="icon"
                       variant="ghost"
-                      className="rounded-full"
+                      className="rounded-full cursor-pointer"
                       onClick={() => deleteAppt(a.id)}
                       aria-label="Löschen"
                     >

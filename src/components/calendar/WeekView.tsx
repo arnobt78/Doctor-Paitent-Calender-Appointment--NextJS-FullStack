@@ -746,7 +746,7 @@ export default function WeekView() {
                                 <label className="flex items-center gap-1">
                                   <input
                                     type="checkbox"
-                                    className="accent-green-600 w-5 h-5"
+                                    className="accent-green-600 w-5 h-5 cursor-pointer"
                                     checked={isDone}
                                     onChange={() =>
                                       toggleStatus(
@@ -762,7 +762,7 @@ export default function WeekView() {
                                 <Button
                                   size="icon"
                                   variant="outline"
-                                  className="rounded-full border-gray-300"
+                                  className="rounded-full border-gray-300 cursor-pointer"
                                   onClick={() => setEditAppt(a)}
                                   aria-label="Bearbeiten"
                                 >
@@ -771,7 +771,7 @@ export default function WeekView() {
                                 <Button
                                   size="icon"
                                   variant="ghost"
-                                  className="rounded-full"
+                                  className="rounded-full cursor-pointer"
                                   onClick={() => deleteAppt(a.id)}
                                   aria-label="Löschen"
                                 >

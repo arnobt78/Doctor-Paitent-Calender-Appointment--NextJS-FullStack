@@ -372,6 +372,7 @@ export default function AppointmentDialog({
               id="title"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
+              className="cursor-pointer"
             />
           </div>
 
@@ -381,6 +382,7 @@ export default function AppointmentDialog({
               id="notes"
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
+              className="cursor-pointer"
             />
           </div>
 
@@ -416,7 +418,7 @@ export default function AppointmentDialog({
           <div className="space-y-2">
             <Label>Klient</Label>
             <Select value={patientId} onValueChange={setPatientId}>
-              <SelectTrigger>
+              <SelectTrigger className="cursor-pointer hover:bg-gray-100 transition-colors">
                 <SelectValue placeholder="Klient auswählen" />
               </SelectTrigger>
               <SelectContent>
@@ -432,7 +434,7 @@ export default function AppointmentDialog({
           <div className="space-y-2">
             <Label>Kategorie</Label>
             <Select value={categoryId} onValueChange={setCategoryId}>
-              <SelectTrigger>
+              <SelectTrigger className="cursor-pointer hover:bg-gray-100 transition-colors">
                 <SelectValue placeholder="Kategorie wählen" />
               </SelectTrigger>
               <SelectContent>
@@ -451,6 +453,7 @@ export default function AppointmentDialog({
               id="location"
               value={location}
               onChange={(e) => setLocation(e.target.value)}
+              className="cursor-pointer"
             />
           </div>
 
@@ -460,6 +463,7 @@ export default function AppointmentDialog({
               id="attachements"
               value={attachements}
               onChange={(e) => setattachements(e.target.value)}
+              className="cursor-pointer"
             />
             <Input
               type="file"
@@ -467,6 +471,7 @@ export default function AppointmentDialog({
               ref={fileInputRef}
               onChange={handleFileChange}
               disabled={uploading}
+              className="cursor-pointer"
             />
             {uploading && (
               <div className="text-xs text-blue-600">Hochladen...</div>
@@ -489,13 +494,13 @@ export default function AppointmentDialog({
                       href={f}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="underline"
+                      className="underline cursor-pointer hover:text-blue-700"
                     >
                       Datei
                     </a>
                     <button
                       type="button"
-                      className="ml-1 text-red-500"
+                      className="ml-1 text-red-500 cursor-pointer hover:bg-red-100 rounded"
                       onClick={() => handleRemoveUploadedFile(f)}
                     >
                       &times;
@@ -509,7 +514,7 @@ export default function AppointmentDialog({
           <div className="space-y-2">
             <Label htmlFor="status">Status</Label>
             <Select value={status} onValueChange={setStatus}>
-              <SelectTrigger>
+              <SelectTrigger className="cursor-pointer hover:bg-gray-100 transition-colors">
                 <SelectValue placeholder="Status wählen" />
               </SelectTrigger>
               <SelectContent>
@@ -524,7 +529,7 @@ export default function AppointmentDialog({
           <div className="space-y-2">
             <Label>Zuweisen (Patienten/Angehörige)</Label>
             <Select onValueChange={handleAddAssignee}>
-              <SelectTrigger>
+              <SelectTrigger className="cursor-pointer hover:bg-gray-100 transition-colors">
                 <SelectValue placeholder="Person auswählen" />
               </SelectTrigger>
               <SelectContent>
@@ -558,7 +563,7 @@ export default function AppointmentDialog({
                     <button
                       type="button"
                       onClick={() => handleRemoveAssignee(a.user)}
-                      className="ml-1 text-red-500"
+                      className="ml-1 text-red-500 cursor-pointer hover:bg-red-100 rounded"
                     >
                       &times;
                     </button>
@@ -575,16 +580,19 @@ export default function AppointmentDialog({
                 placeholder="Typ (z.B. Telefon, Besuch)"
                 value={activityType}
                 onChange={(e) => setActivityType(e.target.value)}
+                className="cursor-pointer"
               />
               <Input
                 placeholder="Inhalt"
                 value={activityContent}
                 onChange={(e) => setActivityContent(e.target.value)}
+                className="cursor-pointer"
               />
               <Button
                 type="button"
                 onClick={handleAddActivity}
                 disabled={loading}
+                className="cursor-pointer transition-colors"
               >
                 Hinzufügen
               </Button>
@@ -599,7 +607,7 @@ export default function AppointmentDialog({
                   <button
                     type="button"
                     onClick={() => handleRemoveActivity(a.id)}
-                    className="ml-1 text-red-500"
+                    className="ml-1 text-red-500 cursor-pointer hover:bg-red-100 rounded"
                   >
                     &times;
                   </button>
@@ -608,7 +616,11 @@ export default function AppointmentDialog({
             </div>
           </div>
         </div>
-        <Button onClick={handleSave} disabled={loading || uploading}>
+        <Button
+          onClick={handleSave}
+          disabled={loading || uploading}
+          className="cursor-pointer transition-colors"
+        >
           {loading
             ? "Speichern..."
             : isEditMode

@@ -59,7 +59,13 @@ export default function CalendarHeader({
           {views.map((v) => (
             <Button
               key={v}
-              onClick={() => setView(v)}
+              onClick={() => {
+                if (v === "Liste") {
+                  // Reset date to today when switching to Liste
+                  setCurrentDate(new Date());
+                }
+                setView(v);
+              }}
               variant={v === view ? "default" : "outline"}
               className="cursor-pointer transition-colors"
             >

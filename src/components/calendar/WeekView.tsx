@@ -216,52 +216,50 @@ export default function WeekView() {
             gridTemplateColumns: `60px repeat(7, minmax(0, ${dayWidth}px))`,
           }}
         >
-          {/* --- Red current time line (if today in week) --- */}
-          {isTodayInWeek() && (
+          {/* --- Red current time line (always visible) --- */}
+          <div
+            style={{
+              position: "absolute",
+              left: 60, // after time column
+              width: 7 * dayWidth, // span all 7 days
+              // Subtract 40 minutes from the red line position for testing
+              top:
+                headerRowHeight +
+                getRedLinePosition() -
+                (42 / 60) * hourHeight,
+              height: 0,
+              zIndex: 50,
+              pointerEvents: "none",
+            }}
+          >
             <div
               style={{
                 position: "absolute",
-                left: 60, // after time column
-                width: 7 * dayWidth, // span all 7 days
-                // Subtract 40 minutes from the red line position for testing
-                top:
-                  headerRowHeight +
-                  getRedLinePosition() -
-                  (42 / 60) * hourHeight,
-                height: 0,
-                zIndex: 50,
-                pointerEvents: "none",
+                left: 0,
+                right: 0,
+                borderTop: "2px solid #ef4444",
+                display: "flex",
+                alignItems: "center",
               }}
             >
-              <div
+              <span
                 style={{
                   position: "absolute",
-                  left: 0,
-                  right: 0,
-                  borderTop: "2px solid #ef4444",
-                  display: "flex",
-                  alignItems: "center",
+                  left: -44,
+                  top: -10,
+                  color: "#fff",
+                  fontSize: 12,
+                  fontWeight: 600,
+                  background: "#ef4444",
+                  padding: "0 4px",
+                  borderRadius: 4,
+                  boxShadow: "0 1px 2px rgba(0,0,0,0.03)",
                 }}
               >
-                <span
-                  style={{
-                    position: "absolute",
-                    left: -48,
-                    top: -10,
-                    color: "#ef4444",
-                    fontSize: 12,
-                    fontWeight: 600,
-                    background: "#fff",
-                    padding: "0 4px",
-                    borderRadius: 4,
-                    boxShadow: "0 1px 2px rgba(0,0,0,0.03)",
-                  }}
-                >
-                  {format(now, "HH:mm")}
-                </span>
-              </div>
+                {format(now, "HH:mm")}
+              </span>
             </div>
-          )}
+          </div>
           {/* Top-left sticky cell */}
           <div
             className="bg-gray-50 border-r border-b"

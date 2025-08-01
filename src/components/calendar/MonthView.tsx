@@ -50,6 +50,14 @@ const bgColors = [
   "#8B5CF6",
   "#EF4444",
   "#14B8A6",
+  "#6366F1",
+  "#F97316",
+  "#A78BFA",
+  "#22D3EE",
+  "#00FF00",
+  "#FFFF00",
+  "#00FFFF",
+  "#FF00FF",
 ];
 const randomBgColor = (seed: string) =>
   bgColors[
@@ -221,11 +229,12 @@ export default function MonthView() {
               <div
                 key={date.toISOString()}
                 className={clsx(
-                  "min-h-[100px] p-2 border border-gray-200 bg-white relative group transition",
+                  "min-h-[100px] p-2 border bg-white relative group transition",
                   !isSameMonth(date, currentDate) &&
                     "bg-gray-100 text-gray-400",
-                  isCurrent && !selected && "bg-green-50",
-                  selected && "bg-gray-100 border-green-600 z-10",
+                  isCurrent && !selected && "bg-green-100",
+                  selected && "bg-gray-200 border-green-600 border-2 z-10",
+                  !selected && "border-gray-200",
                   hasAppointments ? "cursor-pointer" : "cursor-default"
                 )}
                 onClick={() => hasAppointments && setSelectedDate(date)}
@@ -234,8 +243,8 @@ export default function MonthView() {
                   <span
                     className={clsx(
                       "text-xs font-semibold text-gray-700 w-6 h-6 flex items-center justify-center rounded",
-                      selected && "bg-green-700 text-white",
-                      !selected && isCurrent && "bg-green-200 text-green-900"
+                      selected && "bg-green-500 text-white",
+                      !selected && isCurrent && "bg-green-200 text-green-700"
                     )}
                   >
                     {format(date, "d")}
@@ -351,8 +360,10 @@ export default function MonthView() {
                             </div>
                             {a.notes && (
                               <div className="flex items-center gap-2 text-sm text-gray-400 mb-1">
-                                <FiFileText />{" "}
-                                <span className="text-xs text-gray-700">
+                                <span className="flex-shrink-0 flex items-center justify-center">
+                                  <FiFileText className="w-4 h-4" />
+                                </span>
+                                <span className="text-xs text-gray-700 break-words">
                                   {a.notes}
                                 </span>
                               </div>
@@ -508,7 +519,7 @@ export default function MonthView() {
       </div>
       {/* Side list for selected date */}
       {selectedDate && (
-        <div className="w-full md:w-[540px] bg-white rounded-xl shadow-lg p-4 mt-4 md:mt-0 md:ml-4 h-fit sticky top-24">
+        <div className="w-full md:w-[350px] bg-white rounded-xl shadow-lg p-2 h-fit sticky top-41">
           <div className="flex items-center gap-2 mb-4">
             <span className="bg-green-700 text-white rounded px-2 py-1 text-lg font-bold">
               {format(selectedDate, "d")}
@@ -565,9 +576,16 @@ export default function MonthView() {
                       </span>
                     </div>
                     {a.notes && (
-                      <div className="flex items-center gap-2 text-sm text-gray-700 mb-1">
-                        <FiFileText /> {a.notes}
-                      </div>
+                      
+
+                      <div className="flex items-center gap-2 text-sm text-gray-400 mb-1">
+                                <span className="flex-shrink-0 flex items-center justify-center">
+                                  <FiFileText className="w-4 h-4" />
+                                </span>
+                                <span className="text-xs text-gray-700 break-words">
+                                  {a.notes}
+                                </span>
+                              </div>
                     )}
                     <div className="flex items-center gap-2 text-xs text-gray-400 italic mb-1">
                       <FiUser /> Klient:{" "}

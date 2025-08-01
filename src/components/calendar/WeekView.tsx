@@ -276,24 +276,31 @@ export default function WeekView() {
           {/* Date/day header row */}
           {Array.from({ length: 7 }).map((_, i) => {
             const day = addDays(weekStart, i);
-            const isToday = day.toDateString() === currentDate.toDateString();
+            // Only highlight and show 'Heute' if today is in this week
+            const isToday = day.toDateString() === new Date().toDateString();
+            const isCurrentWeek = (() => {
+              const today = new Date();
+              const weekStartDate = startOfWeek(today, { weekStartsOn: 1 });
+              const weekEndDate = addDays(weekStartDate, 6);
+              return weekStart.getTime() === weekStartDate.setHours(0,0,0,0);
+            })();
             return (
               <div
                 key={i}
                 className={
                   "border-r border-b p-2 text-center font-medium text-gray-600 bg-gray-50" +
-                  (isToday ? " bg-green-50" : "")
+                  (isToday && isCurrentWeek ? " bg-green-50" : "")
                 }
                 style={{
                   width: dayWidth,
                   position: "sticky",
                   top: 0,
                   zIndex: 20,
-                  background: isToday ? "#e6f9ed" : "#f9fafb",
+                  background: isToday && isCurrentWeek ? "#e6f9ed" : "#f9fafb",
                 }}
               >
                 {format(day, "EEE dd.MM.")}
-                {isToday && (
+                {isToday && isCurrentWeek && (
                   <span className="ml-2 px-2 py-0.5 rounded bg-green-100 text-green-700 text-xs font-medium">
                     Heute
                   </span>
@@ -318,8 +325,11 @@ export default function WeekView() {
               >{`${hour}:00`}</div>
               {Array.from({ length: 7 }).map((_, i) => {
                 const day = addDays(weekStart, i);
-                const isTodayCol =
-                  day.toDateString() === currentDate.toDateString();
+                // Only highlight current day column if today is in this week
+                const today = new Date();
+                const weekStartDate = startOfWeek(today, { weekStartsOn: 1 });
+                const isCurrentWeek = weekStart.getTime() === weekStartDate.setHours(0,0,0,0);
+                const isTodayCol = day.toDateString() === today.toDateString() && isCurrentWeek;
                 const slotStart = setMinutes(setHours(day, hour), 0);
                 const slotEnd = setMinutes(setHours(day, hour + 1), 0);
                 // Find all appointments that overlap this hour slot

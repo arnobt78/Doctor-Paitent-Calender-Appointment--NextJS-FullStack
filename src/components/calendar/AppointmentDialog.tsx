@@ -29,6 +29,7 @@ import {
   Activity,
   Relative,
 } from "@/types/types";
+import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
 
 type Props = {
   trigger?: React.ReactNode;
@@ -46,6 +47,7 @@ export default function AppointmentDialog({
   onOpenChange,
 }: Props) {
   const isEditMode = Boolean(appointment);
+  const supabase = createClientComponentClient();
   const [open, setOpen] = useState(isEditMode);
 
   // Sync open state with parent if controlled
@@ -89,7 +91,7 @@ export default function AppointmentDialog({
     };
 
     load();
-  }, []);
+  }, [supabase]);
 
   useEffect(() => {
     if (appointment) {
@@ -123,7 +125,7 @@ export default function AppointmentDialog({
       setAssignees([]);
       setActivityList([]);
     }
-  }, [appointment]);
+  }, [appointment, supabase]);
 
   const handleSave = async () => {
     setLoading(true);
@@ -179,7 +181,8 @@ export default function AppointmentDialog({
             .eq("appointment", appointment!.id),
         ]);
       } else {
-        // Insert new appointment and get ID
+        // Insert new appointment and get ID, set user_id to current user
+        const user_id = await getCurrentUserId();
         const { data, error } = await supabase
           .from("appointments")
           .insert([
@@ -193,6 +196,7 @@ export default function AppointmentDialog({
               location,
               attachements: attachementArray,
               status,
+              user_id,
             },
           ])
           .select();

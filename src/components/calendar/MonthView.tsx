@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+// ...existing code...
 import {
   format,
   startOfMonth,
@@ -20,7 +20,8 @@ import {
   AppointmentAssignee,
   Activity,
 } from "@/types/types";
-import { supabase } from "@/lib/supabaseClient";
+import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
+import { useEffect, useState, useCallback } from "react";
 import { useDateContext } from "@/context/DateContext";
 import AppointmentDialog from "./AppointmentDialog";
 import {
@@ -72,6 +73,7 @@ export default function MonthView() {
   const [calendarDays, setCalendarDays] = useState<
     { date: Date; appointments: AppointmentWithCategory[] }[]
   >([]);
+  const supabase = createClientComponentClient();
   const { currentDate } = useDateContext();
   const [editAppt, setEditAppt] = useState<AppointmentWithCategory | null>(
     null
@@ -104,13 +106,17 @@ export default function MonthView() {
   );
 
   useEffect(() => {
-    supabase
-      .from("appointments")
-      .select("*, category:category(*)")
-      .then(
-        ({ data }) => data && buildCalendar(data as AppointmentWithCategory[])
-      );
-  }, [currentDate, buildCalendar]);
+    (async () => {
+      const { data: userData } = await supabase.auth.getUser();
+      const userId = userData?.user?.id;
+      if (!userId) return;
+      const { data } = await supabase
+        .from("appointments")
+        .select("*, category:category(*)")
+        .eq("user_id", userId);
+      if (data) buildCalendar(data as AppointmentWithCategory[]);
+    })();
+  }, [currentDate, buildCalendar, supabase]);
 
   useEffect(() => {
     // Fetch all patients, relatives, assignees, and activities for mapping
@@ -126,7 +132,7 @@ export default function MonthView() {
       setAssignees(assigns || []);
       setActivities(acts || []);
     })();
-  }, []);
+  }, [supabase]);
 
   const toggleStatus = async (id: string, newStatus: string) => {
     await supabase

@@ -29,6 +29,7 @@ import type {
   AppointmentAssignee,
   Activity,
 } from "@/types/types";
+import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
 
 const bgColors = [
   "#F59E0B",
@@ -49,9 +50,8 @@ type AppointmentWithCategory = Appointment & {
 };
 
 export default function WeekView() {
-  const [appointments, setAppointments] = useState<AppointmentWithCategory[]>(
-    []
-  );
+  const [appointments, setAppointments] = useState<AppointmentWithCategory[]>([]);
+  const supabase = createClientComponentClient();
   const { currentDate } = useDateContext();
   const weekStart = startOfWeek(currentDate, { weekStartsOn: 1 });
   const hours = Array.from({ length: 24 }, (_, i) => i);
@@ -80,16 +80,20 @@ export default function WeekView() {
       setAssignees(assigns || []);
       setActivities(acts || []);
     })();
-  }, []);
+  }, [supabase]);
 
   useEffect(() => {
-    supabase
-      .from("appointments")
-      .select("*, category:category(*)")
-      .then(
-        ({ data }) => data && setAppointments(data as AppointmentWithCategory[])
-      );
-  }, [currentDate]);
+    (async () => {
+      const { data: userData } = await supabase.auth.getUser();
+      const userId = userData?.user?.id;
+      if (!userId) return;
+      const { data } = await supabase
+        .from("appointments")
+        .select("*, category:category(*)")
+        .eq("user_id", userId);
+      if (data) setAppointments(data as AppointmentWithCategory[]);
+    })();
+  }, [currentDate, supabase]);
 
   const toggleStatus = async (id: string, newStatus: string) => {
     await supabase

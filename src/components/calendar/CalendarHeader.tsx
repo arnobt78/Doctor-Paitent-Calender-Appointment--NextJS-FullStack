@@ -5,6 +5,7 @@ import { format, addDays } from "date-fns";
 import { de } from "date-fns/locale";
 import { Button } from "@/components/ui/button";
 import React from "react";
+import AppointmentDialogTrigger from "./AppointmentDialogTrigger";
 
 // Change tab order to Liste, Woche, Monat
 const views = ["Liste", "Woche", "Monat"] as const;
@@ -73,6 +74,10 @@ export default function CalendarHeader({
             </Button>
           ))}
         </div>
+        {/* Restore + Neuer Termin button */}
+        <AppointmentDialogTrigger
+          trigger={<Button variant="default" className="cursor-pointer">+ Neuer Termin</Button>}
+        />
       </div>
     </div>
   );

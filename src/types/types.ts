@@ -1,3 +1,11 @@
+// App User (matches Supabase Auth user and users table)
+export interface User {
+  id: UUID; // Supabase Auth user id
+  email: string;
+  role?: string;
+  display_name?: string;
+  created_at?: string;
+}
 export type UUID = string;
 
 // Patient
@@ -49,6 +57,7 @@ export interface Appointment {
   notes: string;
   title: string;
   status?: "done" | "pending" | "alert"; // Optional status field added
+  user_id: UUID; // The owner (Supabase Auth user id)
 }
 
 // Appointment Assignee

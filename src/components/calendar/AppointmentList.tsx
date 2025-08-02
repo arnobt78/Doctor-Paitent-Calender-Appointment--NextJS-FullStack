@@ -11,7 +11,12 @@ import {
   Activity,
   Relative,
 } from "@/types/types";
-import { supabase } from "@/lib/supabaseClient";
+// import { supabase } from "@/lib/supabaseClient";
+
+// Import Supabase Auth helpers
+import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
+import { useEffect as useAuthEffect, useState as useAuthState } from "react";
+import type { User } from "@supabase/supabase-js";
 import Filters from "./Filters";
 import AppointmentDialog from "./AppointmentDialog";
 import { useDateContext } from "@/context/DateContext";
@@ -85,9 +90,8 @@ function groupAppointmentsByDate(appts: FullAppointment[]) {
     if (!groups[key]) groups[key] = [];
     groups[key].push(appt);
   });
-  // Sort keys ascending (today first, then future)
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+
+  // Removed stray today.setHours(0, 0, 0, 0); // 'today' is not defined here and not needed
   const sortedKeys = Object.keys(groups).sort((a, b) => {
     const da = new Date(a);
     const db = new Date(b);
@@ -133,6 +137,10 @@ function getDateTag(date: Date) {
 }
 
 export default function AppointmentList() {
+  // State for current user
+  const [user, setUser] = useAuthState<User | null>(null);
+  // Create a Supabase client for all calls
+  const supabase = createClientComponentClient();
   const [appointments, setAppointments] = useState<FullAppointment[]>([]);
   const [category, setCategory] = useState<string | null>(null);
   const [patient, setPatient] = useState<string | null>(null);
@@ -158,18 +166,28 @@ export default function AppointmentList() {
       const { data: rels } = await supabase.from("relatives").select("*");
       setRelatives(rels || []);
     })();
-  }, []);
+  }, [supabase]);
+
+  // Fetch current user on mount
+  useAuthEffect(() => {
+    (async () => {
+      const { data } = await supabase.auth.getUser();
+      setUser(data.user ?? null);
+    })();
+  }, [supabase]);
 
   // Compose filters object for query
   const filters = { category, patient, date, status };
 
   const fetchAppointments = useCallback(async () => {
+    if (!user) return;
     setLoading(true);
     let query = supabase
       .from("appointments")
       .select(
         "*, category:category(*), patient:patients(*), appointment_assignee:appointment_assignee(*), activities:activities(*)"
       )
+      .eq("user_id", user.id)
       .order("start", { ascending: true });
     if (date) {
       const day = new Date(date);
@@ -187,11 +205,11 @@ export default function AppointmentList() {
     const { data } = await query;
     setAppointments(data as FullAppointment[]);
     setLoading(false);
-  }, [category, patient, date, status]);
+  }, [category, patient, date, status, user, supabase]);
 
   useEffect(() => {
-    fetchAppointments();
-  }, [fetchAppointments, currentDate]);
+    if (user) fetchAppointments();
+  }, [fetchAppointments, currentDate, user]);
 
   const toggleStatus = async (id: string, newStatus: string) => {
     await supabase
@@ -275,16 +293,6 @@ export default function AppointmentList() {
   // --- DEBUG: Log Supabase Storage buckets and env at runtime ---
   useEffect(() => {
     (async () => {
-      // Log Supabase env using environment variables (not protected properties)
-      // console.log(
-      //   "[DEBUG] SUPABASE_URL:",
-      //   process.env.NEXT_PUBLIC_SUPABASE_URL
-      // );
-
-      // console.log(
-      //   "[DEBUG] SUPABASE_ANON_KEY:",
-      //   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-      // );
       // List all buckets
       const { data: buckets, error } = await supabase.storage.listBuckets();
       if (error) {
@@ -293,14 +301,17 @@ export default function AppointmentList() {
         console.log("[DEBUG] Supabase buckets:", buckets);
       }
     })();
-  }, []);
+  }, [supabase.storage]);
 
   // Group appointments by date (descending)
   const grouped = groupAppointmentsByDate(filteredAppointments);
 
-  return loading ? (
-    <AppointmentListSkeleton />
-  ) : (
+  if (loading) {
+    return <AppointmentListSkeleton />;
+  }
+
+  // ...existing code for rendering the list...
+  return (
     <div className="p-6 sm:p-8 space-y-6 bg-[#f5f5f6] min-h-[calc(100vh-80px)]">
       {/* <ListCalendarHeader /> */}
       <h2 className="text-2xl font-semibold tracking-tight text-gray-800 mb-2">
@@ -339,42 +350,44 @@ export default function AppointmentList() {
         </div>
       </div>
       {/* Only show the 'Kein Treffer gefunden' message if there is a search term */}
-      {filteredAppointments.length === 0 && search.trim() && (
-        <div className="text-center text-gray-500 mt-8 text-sm">
-          ❌ Kein Treffer gefunden für Ihre Suche nach &quot;{search}&quot;
-        </div>
+      {/* {filteredAppointments.length === 0 && search.trim() && ( */}
+      
+      {/* Show empty state if no appointments at all (before filtering) */}
+      {appointments.length === 0 && (
+        <div className="flex items-center justify-center min-h-[50vh]">
+          <div className="text-center text-gray-500 text-lg">
+              Kein Termin gefunden!
+          </div>
+      </div>
       )}
-      {isEmpty && (
-        <div className="text-center text-gray-500 mt-8 text-sm">
-          ❌ Keine Termine gefunden für die ausgewählten Filter.
+
+      {/* Only show the 'Kein Treffer gefunden' message if there are appointments but none match the filter/search */}
+      {appointments.length > 0 && filteredAppointments.length === 0 && (
+        <div className="flex items-center justify-center min-h-[40vh]">
+          <div className="text-center text-gray-500 text-lg">
+            ❌ Kein Treffer gefunden für Ihre Suche nach &quot;{search}&quot;
+          </div>
         </div>
       )}
 
-      <div className="flex flex-col gap-4">
-        {grouped.map(({ date, appts }) => (
-          <div key={date.toISOString()}>
-            <DateHeadline date={date} />
-            <div className="flex flex-col gap-4">
-              {appts.map((appt, i) => {
-                // DEBUG: Log patient info for this appointment
-                console.log(
-                  "[DEBUG] appt.id:",
-                  appt.id,
-                  "appt.patient:",
-                  appt.patient,
-                  "appt.patient_data:",
-                  appt.patient_data,
-                  "patients:",
-                  patients
-                );
+      {/* Render grouped appointments */}
+
+      {filteredAppointments.length > 0 && (
+        <div className="flex flex-col gap-4">
+          {grouped.map(({ date, appts }) => (
+            <div key={date.toISOString()}>
+              <DateHeadline date={date} />
+              <div className="flex flex-col gap-4">
+                {appts.map((appt, i) => {
+                  // --- Begin: Restored full-featured appointment card ---
                 const start = new Date(appt.start);
                 const now = new Date();
                 const isToday =
                   start.getFullYear() === now.getFullYear() &&
                   start.getMonth() === now.getMonth() &&
                   start.getDate() === now.getDate();
-                const color =
-                  appt.category_data?.color || randomBgColor(appt.id);
+                // Always use a stable random color from bgColors for the left border if no category color is set
+                const color = appt.category_data?.color || randomBgColor(appt.id);
                 const isDone = appt.status === "done";
                 const categoryIcon = appt.category_data?.icon ? (
                   <span className="inline-flex items-center mr-1">
@@ -382,17 +395,19 @@ export default function AppointmentList() {
                   </span>
                 ) : null;
 
+
                 return (
                   <div
                     key={appt.id}
                     data-today={isToday ? "true" : undefined}
                     ref={isToday && i === 0 ? scrollRef : null}
                     className={`relative border rounded-xl shadow bg-white p-0 flex items-stretch transition hover:shadow-lg min-h-[110px]`}
+                    style={{ '--appt-color': color } as React.CSSProperties}
                   >
                     {/* Color bar */}
                     <div
-                      className="w-2 rounded-l-xl h-full absolute left-0 top-0 bottom-0"
-                      style={{ backgroundColor: color }}
+                      className="w-2 rounded-l-xl h-full absolute left-0 top-0 bottom-0 transition-colors"
+                      style={{ backgroundColor: 'var(--appt-color)' }}
                     />
                     {/* Main content */}
                     <div className="pl-6 pr-2 py-4 flex-1 flex flex-col justify-center min-h-[110px]">
@@ -462,8 +477,7 @@ export default function AppointmentList() {
                               isDone ? "line-through text-gray-400" : undefined
                             }
                           >
-                            {format(start, "HH:mm")} –{" "}
-                            {format(new Date(appt.end), "HH:mm")}
+                            {format(start, "HH:mm")} – {format(new Date(appt.end), "HH:mm")}
                           </span>
                         </span>
                       </div>
@@ -502,9 +516,7 @@ export default function AppointmentList() {
                           typeof appt.patient === "object" &&
                           "firstname" in appt.patient &&
                           "lastname" in appt.patient
-                            ? `${(appt.patient as Patient).firstname} ${
-                                (appt.patient as Patient).lastname
-                              }`
+                            ? `${(appt.patient as Patient).firstname} ${(appt.patient as Patient).lastname}`
                             : appt.patient && patients.length > 0
                             ? (() => {
                                 const p = patients.find(
@@ -517,21 +529,6 @@ export default function AppointmentList() {
                             : "--"}
                         </span>
                       </div>
-                      {/* <div className="flex items-center gap-2 text-xs text-gray-400 italic mb-1">
-                        <FiUser /> Klient:{" "}
-                        <span className="not-italic text-gray-700">
-                          {appt.patient && patients.length > 0
-                            ? (() => {
-                                const p = patients.find(
-                                  (x) => x.id === appt.patient
-                                );
-                                return p
-                                  ? `${p.firstname} ${p.lastname}`
-                                  : "--";
-                              })()
-                            : "--"}
-                        </span>
-                      </div> */}
                       {/* Location with icon */}
                       <div className="flex items-center gap-2 text-xs text-gray-400 italic mt-1">
                         <FiMapPin className="w-4 h-4" />
@@ -669,11 +666,14 @@ export default function AppointmentList() {
                     </div>
                   </div>
                 );
+                // --- End: Restored full-featured appointment card ---
               })}
             </div>
           </div>
         ))}
       </div>
+                )}
+
       {/* Edit dialog */}
       {editAppt ? (
         <AppointmentDialog

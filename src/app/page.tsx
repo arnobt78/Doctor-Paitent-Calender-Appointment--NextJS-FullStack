@@ -44,7 +44,6 @@ const HomePage: React.FC = () => {
         <Link href="/" className="text-lg font-semibold">Vocare Calendar</Link>
       </div>
 
-            {/* <div className="font-semibold text-lg">Vocare Kalender</div> */}
             <div className="flex items-center gap-4">
               {userEmail && <span className="text-sm text-gray-600">{userEmail}</span>}
               <Button variant="outline" size="sm" onClick={handleLogout}>

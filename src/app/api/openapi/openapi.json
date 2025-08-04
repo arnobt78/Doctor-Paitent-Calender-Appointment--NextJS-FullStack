@@ -1,0 +1,28 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "Vocare Calendar API",
+    "version": "1.0.0",
+    "description": "OpenAPI documentation for the Vocare Calendar Next.js API."
+  },
+  "paths": {
+    "/api/appointments": {
+      "get": {
+        "summary": "Get all appointments",
+        "responses": {
+          "200": {
+            "description": "A list of appointments.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "type": "object" }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

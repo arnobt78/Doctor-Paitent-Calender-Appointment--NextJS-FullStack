@@ -1,4 +1,7 @@
 import "../styles/globals.css";
+import Navbar from "@/components/navbar/Navbar";
+import AuthGuard from "@/components/AuthGuard";
+import { DateProvider } from "@/context/DateContext";
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import { cn } from "@/lib/utils";
@@ -54,8 +57,16 @@ export default function RootLayout({
 }) {
   return (
     <html lang="de">
+      <head>
+        <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+      </head>
       <body className={cn("min-h-screen bg-gray-50 text-gray-900", inter.className)}>
-        {children}
+        <AuthGuard>
+          <DateProvider>
+            <Navbar />
+            {children}
+          </DateProvider>
+        </AuthGuard>
       </body>
     </html>
   );

@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { supabase } from "@/lib/supabaseClient";
+
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -47,7 +47,10 @@ export default function Login() {
   const handleGoogle = async () => {
     setLoading(true);
     setError("");
-    const { data, error } = await supabase.auth.signInWithOAuth({ provider: "google" });
+    const { data, error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: { redirectTo: window.location.origin }
+    });
     setLoading(false);
     if (error) setError(error.message);
     // After Google OAuth, Supabase will send a confirmation email if required by project settings

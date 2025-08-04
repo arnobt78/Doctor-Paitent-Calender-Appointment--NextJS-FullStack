@@ -813,8 +813,8 @@ export default function WeekView() {
               .from("appointments")
               .select("*, category:category(*)")
               .then(
-                ({ data }) =>
-                  data && setAppointments(data as AppointmentWithCategory[])
+                ({ data }: { data: AppointmentWithCategory[] | null }) =>
+                  data && setAppointments(data)
               );
           }}
           trigger={null}

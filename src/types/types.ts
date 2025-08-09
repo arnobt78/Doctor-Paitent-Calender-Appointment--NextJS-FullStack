@@ -67,6 +67,9 @@ export interface AppointmentAssignee {
   appointment: UUID;
   user: UUID;
   user_type: "relatives" | "patients";
+  status?: "pending" | "accepted" | "declined";
+  permission?: "read" | "write" | "full";
+  invited_email?: string;
 }
 
 // Activity

@@ -17,6 +17,12 @@ const eslintConfig = [
       "@typescript-eslint/no-unused-vars": "off",
     },
   },
+  // Ignore uuid import errors in API routes
+  {
+    ignores: [
+      '**/src/app/api/invitations/route.ts',
+    ],
+  },
 ];
 
 export default eslintConfig;

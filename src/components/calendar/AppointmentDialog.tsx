@@ -107,12 +107,19 @@ export default function AppointmentDialog({
       setOpen(true);
       (async () => {
         if (appointment.id) {
-          // Prefill assignees with all fields
+          // Prefill assignees with all fields, but deduplicate by user + invited_email
           const { data: assigneesData } = await supabase
             .from("appointment_assignee")
-            .select("id, created_at, appointment, user, user_type")
+            .select("id, created_at, appointment, user, user_type, invited_email, status, permission")
             .eq("appointment", appointment.id);
-          setAssignees((assigneesData as AppointmentAssignee[]) || []);
+          const dedupedMap = new Map();
+          for (const a of (assigneesData as AppointmentAssignee[] || [])) {
+            const key = `${a.user || ''}|${a.invited_email || ''}`;
+            if (!dedupedMap.has(key)) {
+              dedupedMap.set(key, a);
+            }
+          }
+          setAssignees(Array.from(dedupedMap.values()));
           // Prefill activities with all fields
           const { data: acts } = await supabase
             .from("activities")
@@ -162,6 +169,8 @@ export default function AppointmentDialog({
           updates.attachements = attachementArray;
         if (status !== appointment?.status)
           updates.status = status as "pending" | "done" | "alert";
+        // Always update updated_at on edit
+        updates.updated_at = new Date().toISOString();
         if (Object.keys(updates).length > 0) {
           const { error } = await supabase
             .from("appointments")
@@ -169,17 +178,79 @@ export default function AppointmentDialog({
             .eq("id", appointment!.id);
           if (error) throw new Error("Fehler beim Speichern");
         }
+        // --- PATCH: Preserve all existing assignees ---
+        // Fetch all existing assignees for this appointment
+        const { data: existingAssignees } = await supabase
+          .from("appointment_assignee")
+          .select("*")
+          .eq("appointment", appointment!.id);
+        console.log('[AppointmentDialog] Edit:', { appointment, existingAssignees, assignees });
+        // Merge dialog assignees with existing ones, keeping accepted/invited users
+        // Deduplicate by user and invited_email, keep highest status/permission
+        const allAssignees = [...(existingAssignees || []), ...assignees];
+        const dedupedMap = new Map();
+        for (const a of allAssignees) {
+          const key = `${a.user || ''}|${a.invited_email || ''}`;
+          if (!dedupedMap.has(key)) {
+            dedupedMap.set(key, a);
+          } else {
+            // Prefer accepted over pending, prefer higher permission
+            const prev = dedupedMap.get(key);
+            const statusOrder: Record<'accepted' | 'pending', number> = { accepted: 2, pending: 1 };
+            const permOrder: Record<'full' | 'write' | 'read', number> = { full: 3, write: 2, read: 1 };
+            // Type guards for status and permission
+            const isValidStatus = (s: unknown): s is 'accepted' | 'pending' => s === 'accepted' || s === 'pending';
+            const isValidPerm = (p: unknown): p is 'full' | 'write' | 'read' => p === 'full' || p === 'write' || p === 'read';
+            const prevStatus = isValidStatus(String(prev.status)) ? statusOrder[String(prev.status) as 'accepted' | 'pending'] : 0;
+            const currStatus = isValidStatus(String(a.status)) ? statusOrder[String(a.status) as 'accepted' | 'pending'] : 0;
+            const prevPerm = isValidPerm(String(prev.permission)) ? permOrder[String(prev.permission) as 'full' | 'write' | 'read'] : 0;
+            const currPerm = isValidPerm(String(a.permission)) ? permOrder[String(a.permission) as 'full' | 'write' | 'read'] : 0;
+            if (
+              currStatus > prevStatus ||
+              (currStatus === prevStatus && currPerm > prevPerm)
+            ) {
+              dedupedMap.set(key, a);
+            }
+          }
+        }
+        const mergedAssignees = Array.from(dedupedMap.values());
+        console.log('[AppointmentDialog] Merged Assignees:', mergedAssignees);
         // Remove old assignees/activities atomically
-        await Promise.all([
-          supabase
-            .from("appointment_assignee")
-            .delete()
-            .eq("appointment", appointment!.id),
-          supabase
-            .from("activities")
-            .delete()
-            .eq("appointment", appointment!.id),
-        ]);
+        // Only allow owner to update assignees. If current user is not owner, skip assignee update.
+        const isOwner = appointment?.user_id === (await getCurrentUserId());
+        if (isOwner) {
+          await Promise.all([
+            supabase
+              .from("appointment_assignee")
+              .delete()
+              .eq("appointment", appointment!.id),
+            supabase
+              .from("activities")
+              .delete()
+              .eq("appointment", appointment!.id),
+          ]);
+          // Re-insert only unique assignees (deduplicated by user and invited_email)
+          const uniqueAssigneesMap = new Map();
+          for (const a of mergedAssignees) {
+            const key = `${a.user || ''}|${a.invited_email || ''}`;
+            if (!uniqueAssigneesMap.has(key)) {
+              uniqueAssigneesMap.set(key, a);
+            }
+          }
+          const uniqueAssignees = Array.from(uniqueAssigneesMap.values());
+          if (uniqueAssignees.length > 0) {
+            await supabase.from("appointment_assignee").insert(
+              uniqueAssignees.map((a) => ({
+                appointment: apptId,
+                user: a.user,
+                user_type: a.user_type,
+                invited_email: a.invited_email || null,
+                status: typeof a.status === 'string' ? a.status : "pending",
+                permission: typeof a.permission === 'string' ? a.permission : "read",
+              }))
+            );
+          }
+        }
       } else {
         // Insert new appointment and get ID, set user_id to current user
         const user_id = await getCurrentUserId();
@@ -203,16 +274,44 @@ export default function AppointmentDialog({
         if (error || !data || !data[0])
           throw new Error("Fehler beim Speichern");
         apptId = data[0].id;
-      }
-      // Save assignees (all fields)
-      if (assignees.length > 0) {
-        await supabase.from("appointment_assignee").insert(
-          assignees.map((a) => ({
-            appointment: apptId,
-            user: a.user,
-            user_type: a.user_type,
-          }))
-        );
+        // Deduplicate assignees before insert
+        if (assignees.length > 0) {
+          const dedupedMap = new Map<string, typeof assignees[0]>();
+          for (const a of assignees) {
+            const key = `${a.user || ''}|${a.invited_email || ''}`;
+            if (!dedupedMap.has(key)) {
+              dedupedMap.set(key, a);
+            } else {
+              // Prefer accepted over pending, prefer higher permission
+              const prev = dedupedMap.get(key);
+              const statusOrder: Record<'accepted' | 'pending', number> = { accepted: 2, pending: 1 };
+              const permOrder: Record<'full' | 'write' | 'read', number> = { full: 3, write: 2, read: 1 };
+              const isValidStatus = (s: unknown): s is 'accepted' | 'pending' => s === 'accepted' || s === 'pending';
+              const isValidPerm = (p: unknown): p is 'full' | 'write' | 'read' => p === 'full' || p === 'write' || p === 'read';
+              const prevStatus = isValidStatus(prev?.status) ? statusOrder[prev.status as 'accepted' | 'pending'] : 0;
+              const currStatus = isValidStatus(a.status) ? statusOrder[a.status as 'accepted' | 'pending'] : 0;
+              const prevPerm = isValidPerm(prev?.permission) ? permOrder[prev.permission as 'full' | 'write' | 'read'] : 0;
+              const currPerm = isValidPerm(a.permission) ? permOrder[a.permission as 'full' | 'write' | 'read'] : 0;
+              if (
+                currStatus > prevStatus ||
+                (currStatus === prevStatus && currPerm > prevPerm)
+              ) {
+                dedupedMap.set(key, a);
+              }
+            }
+          }
+          const uniqueAssignees = Array.from(dedupedMap.values());
+          await supabase.from("appointment_assignee").insert(
+            uniqueAssignees.map((a) => ({
+              appointment: apptId,
+              user: a.user,
+              user_type: a.user_type,
+              invited_email: a.invited_email || null,
+              status: typeof a.status === 'string' ? a.status : "pending",
+              permission: typeof a.permission === 'string' ? a.permission : "read",
+            }))
+          );
+        }
       }
       // Save activities (all fields)
       if (activityList.length > 0) {

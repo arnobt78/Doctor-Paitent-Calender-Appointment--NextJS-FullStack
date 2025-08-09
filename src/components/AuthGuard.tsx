@@ -4,7 +4,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
 
 
-const ALLOWED_PATHS = ["/login", "/register"];
+const ALLOWED_PATHS = ["/login", "/register", "/accept-invitation"];
 
 export default function AuthGuard({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -29,8 +29,12 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
           router.replace("/login?verify=1");
           return;
         }
-        // If logged in and on login/register, redirect to main app
-        if (data?.user && data.user.email_confirmed_at && ALLOWED_PATHS.includes(pathname)) {
+        // If logged in and on login/register, redirect to main app, but NOT if on /accept-invitation
+        if (
+          data?.user &&
+          data.user.email_confirmed_at &&
+          ["/login", "/register"].includes(pathname)
+        ) {
           router.replace("/");
         }
         // Always upsert user into users table after successful login and email verification

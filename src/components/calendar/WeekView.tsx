@@ -2,27 +2,12 @@
 
 import { useEffect, useState } from "react";
 import { format, startOfWeek, addDays, setHours, setMinutes } from "date-fns";
-import clsx from "clsx";
 import { Appointment, Category } from "@/types/types";
-import { supabase } from "@/lib/supabaseClient";
+import { getUserAppointmentPermission } from "@/lib/permissions";
 import AppointmentDialog from "./AppointmentDialog";
+import EditAppointmentDialog from "./EditAppointmentDialog";
 import { useDateContext } from "@/context/DateContext";
-import {
-  HoverCard,
-  HoverCardTrigger,
-  HoverCardContent,
-} from "@/components/ui/hover-card";
-import { Button } from "@/components/ui/button";
-import {
-  FiEdit2,
-  FiTrash2,
-  FiFileText,
-  FiUser,
-  FiMapPin,
-  FiPaperclip,
-  FiFlag,
-  FiUsers,
-} from "react-icons/fi";
+
 import type {
   Patient,
   Relative,
@@ -30,41 +15,33 @@ import type {
   Activity,
 } from "@/types/types";
 import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
-
-const bgColors = [
-  "#F59E0B",
-  "#10B981",
-  "#3B82F6",
-  "#EC4899",
-  "#8B5CF6",
-  "#EF4444",
-  "#14B8A6",
-];
-const randomBgColor = (seed: string) =>
-  bgColors[
-    seed.split("").reduce((a, c) => a + c.charCodeAt(0), 0) % bgColors.length
-  ];
+import AppointmentHoverCard from "./AppointmentHoverCard";
+import { useAppointmentColor } from "@/context/AppointmentColorContext";
 
 type AppointmentWithCategory = Appointment & {
   category_data?: Category;
+  appointment_assignee?: AppointmentAssignee[];
 };
 
 export default function WeekView() {
-  const [appointments, setAppointments] = useState<AppointmentWithCategory[]>([]);
+const [appointments, setAppointments] = useState<AppointmentWithCategory[]>([]);
   const supabase = createClientComponentClient();
   const { currentDate } = useDateContext();
   const weekStart = startOfWeek(currentDate, { weekStartsOn: 1 });
   const hours = Array.from({ length: 24 }, (_, i) => i);
-  const [editAppt, setEditAppt] = useState<AppointmentWithCategory | null>(
-    null
-  );
+  const [editAppt, setEditAppt] = useState<AppointmentWithCategory | null>(null);
   const [editOpen, setEditOpen] = useState(false);
+  // Store current userId and userEmail for permission checks
+  const [userId, setUserId] = useState<string | null>(null);
+  const [userEmail, setUserEmail] = useState<string | null>(null);
 
   // Add state for patients, relatives, assignees, activities
   const [patients, setPatients] = useState<Patient[]>([]);
   const [relatives, setRelatives] = useState<Relative[]>([]);
   const [assignees, setAssignees] = useState<AppointmentAssignee[]>([]);
   const [activities, setActivities] = useState<Activity[]>([]);
+
+  const { randomBgColor } = useAppointmentColor();
 
   useEffect(() => {
     // Fetch all patients, relatives, assignees, and activities for mapping
@@ -85,15 +62,79 @@ export default function WeekView() {
   useEffect(() => {
     (async () => {
       const { data: userData } = await supabase.auth.getUser();
-      const userId = userData?.user?.id;
-      if (!userId) return;
-      const { data } = await supabase
+      const uid = userData?.user?.id;
+      const email = userData?.user?.email || null;
+      if (!uid && !email) return;
+      setUserId(uid || null);
+      setUserEmail(email);
+      // Fetch owned appointments
+      const { data: owned } = await supabase
         .from("appointments")
-        .select("*, category:category(*)")
-        .eq("user_id", userId);
-      if (data) setAppointments(data as AppointmentWithCategory[]);
+        .select("*, category:category(*), appointment_assignee:appointment_assignee(*)")
+        .eq("user_id", uid);
+      // Fetch assigned appointments by user
+      const { data: assignedByUser } = await supabase
+        .from("appointment_assignee")
+        .select("appointment, permission, status, appointment_data:appointment(*), invited_email, id, created_at, user, user_type")
+        .eq("user", uid)
+        .eq("status", "accepted");
+      // Fetch assigned appointments by invited_email
+      let assignedByEmail: (AppointmentAssignee & { appointment_data: Appointment })[] = [];
+      if (email) {
+        const { data: assignedEmail } = await supabase
+          .from("appointment_assignee")
+          .select("appointment, permission, status, appointment_data:appointment(*), invited_email, id, created_at, user, user_type")
+          .eq("invited_email", email)
+          .eq("status", "accepted");
+        assignedByEmail = (assignedEmail || []).map((a) => ({
+          ...a,
+          appointment_data: Array.isArray(a.appointment_data)
+            ? a.appointment_data[0]
+            : a.appointment_data,
+        }));
+      }
+
+      // Merge assigned appointments
+      type AppointmentWithAssignees = AppointmentWithCategory & { appointment_assignee?: AppointmentAssignee[] };
+      const assignedAppointments: AppointmentWithAssignees[] = [...(assignedByUser || []), ...assignedByEmail]
+        .filter((a) => typeof a.permission === "string" && ["read", "write", "full"].includes(a.permission))
+        .map((a) => {
+          const apptData = Array.isArray(a.appointment_data)
+            ? a.appointment_data[0]
+            : a.appointment_data;
+          return { ...apptData, appointment_assignee: [a] };
+        });
+      // Merge and deduplicate, always include all assignees for each appointment
+      const allAppointments: AppointmentWithAssignees[] = [...(owned || []), ...assignedAppointments].map((appt) => ({ ...appt }));
+      const deduped: AppointmentWithAssignees[] = allAppointments.reduce((acc: AppointmentWithAssignees[], curr: AppointmentWithAssignees) => {
+        if (!curr || !curr.id) return acc;
+        const existing = acc.find((a) => a.id === curr.id);
+        if (existing) {
+          existing.appointment_assignee = [
+            ...(existing.appointment_assignee || []),
+            ...(curr.appointment_assignee || [])
+          ].filter((v, i, arr) => v && v.id && arr.findIndex((b) => b.id === v.id) === i);
+        } else {
+          acc.push(curr);
+        }
+        return acc;
+      }, []);
+      if (deduped) setAppointments(deduped as AppointmentWithCategory[]);
     })();
   }, [currentDate, supabase]);
+
+  // Helper: get permission for current user on an appointment
+  // Use shared permission helper
+  function getUserPermission(
+    appt: AppointmentWithCategory & { appointment_assignee?: AppointmentAssignee[] },
+    uid: string | null
+  ): "owner" | "full" | "write" | "read" | null {
+    return getUserAppointmentPermission({
+      appointment: appt,
+      assignees: appt.appointment_assignee,
+      userId: uid,
+    });
+  }
 
   const toggleStatus = async (id: string, newStatus: string) => {
     await supabase
@@ -275,6 +316,7 @@ export default function WeekView() {
               zIndex: 30,
             }}
           />
+
           {/* Date/day header row */}
           {Array.from({ length: 7 }).map((_, i) => {
             const day = addDays(weekStart, i);
@@ -323,8 +365,9 @@ export default function WeekView() {
                   left: 0,
                   zIndex: 15,
                   background: "#f9fafb",
-                }}
-              >{`${hour}:00`}</div>
+                  }}
+                  >{`${hour}:00`}
+              </div>
               {Array.from({ length: 7 }).map((_, i) => {
                 const day = addDays(weekStart, i);
                 // Only highlight current day column if today is in this week
@@ -357,444 +400,51 @@ export default function WeekView() {
                       background: isTodayCol ? "#e6f9ed" : undefined,
                     }}
                   >
+                    
+                    {/* Inject your code here: */}
                     {matches.map((a) => {
-                      const color =
-                        a.category_data?.color || randomBgColor(a.id);
-                      const isDone = a.status === "done";
-                      const start = new Date(a.start);
-                      const end = new Date(a.end);
-                      const hourStart =
-                        start.getHours() + start.getMinutes() / 60;
-                      const hourEnd = end.getHours() + end.getMinutes() / 60;
-                      const slotHour = hour;
-                      const slotTop = Math.max(
-                        0,
-                        (hourStart - slotHour) * hourHeight
-                      );
-                      const minCardHeight = 180;
-                      const slotHeight = Math.max(
-                        minCardHeight,
-                        (hourEnd - hourStart) * hourHeight
-                      );
-                      if (Math.floor(hourStart) !== slotHour) return null;
-                      const cardBg = lightenColor(color, 70);
-                      // Helper to trim text
-                      const trimText = (text: string, max: number) =>
-                        text && text.length > max
-                          ? text.slice(0, max) + "..."
-                          : text;
-                      return (
-                        <HoverCard key={a.id}>
-                          <HoverCardTrigger asChild>
-                            <div
-                              className={clsx(
-                                "absolute left-1 right-1 rounded-xl shadow flex flex-col group transition hover:shadow-lg border overflow-hidden items-start text-left",
-                                isDone && "opacity-60"
-                              )}
-                              style={{
-                                zIndex: 2,
-                                top: slotTop,
-                                height: slotHeight,
-                                minHeight: minCardHeight,
-                                background: cardBg,
-                                borderColor: color,
-                              }}
-                            >
-                              {/* Color bar spans full card height */}
-                              <div
-                                className="w-2 rounded-l-xl h-full absolute left-0 top-0 bottom-0"
-                                style={{ backgroundColor: color }}
-                              />
-                              {/* Main content: title, tag, date, time, notes */}
-                              <div className="pl-6 pr-2 py-3 flex-1 flex flex-col justify-start items-start text-left w-full">
-                                {/* Title and tag on separate rows */}
-                                <div className="flex flex-col gap-1 mb-1 w-full">
-                                  <span
-                                    className={clsx(
-                                      "text-base font-semibold text-gray-700 truncate",
-                                      isDone && "line-through text-gray-400"
-                                    )}
-                                  >
-                                    {trimText(a.title, 18)}
-                                  </span>
-                                  {getDateTag(start)}
-                                </div>
-
-                                {/* Date row */}
-                                {/* <div className="flex items-center gap-2 text-xs text-gray-500 mb-1 w-full">
-                                  <FiFileText className="inline-block align-middle text-gray-400" />
-                                  <span
-                                    className={
-                                      isDone
-                                        ? "line-through text-gray-400"
-                                        : undefined
-                                    }
-                                  >
-                                    {format(start, "dd.MM.yyyy")}
-                                  </span>
-                                </div> */}
-                                {/* Time row */}
-                                {/* <div className="flex items-center gap-2 text-xs text-gray-500 mb-1 w-full">
-                                  <svg
-                                    width="16"
-                                    height="16"
-                                    fill="none"
-                                    viewBox="0 0 24 24"
-                                    className="inline-block align-middle text-gray-400"
-                                  >
-                                    <path
-                                      d="M12 6V12L16 14"
-                                      stroke="currentColor"
-                                      strokeWidth="2"
-                                      strokeLinecap="round"
-                                      strokeLinejoin="round"
-                                    />
-                                    <circle
-                                      cx="12"
-                                      cy="12"
-                                      r="10"
-                                      stroke="currentColor"
-                                      strokeWidth="2"
-                                    />
-                                  </svg>
-                                  <span
-                                    className={
-                                      isDone
-                                        ? "line-through text-gray-400"
-                                        : undefined
-                                    }
-                                  >
-                                    {format(start, "HH:mm")} –{" "}
-                                    {format(end, "HH:mm")}
-                                  </span>
-                                </div> */}
-
-                                {/* Date and Time with icon */}
-                                <div className="flex flex-col gap-1 text-sm text-gray-500 mb-1">
-                                  <span className="flex items-center gap-1">
-                                    <svg
-                                      width="16"
-                                      height="16"
-                                      fill="none"
-                                      viewBox="0 0 24 24"
-                                      className="inline-block align-middle text-gray-400"
-                                    >
-                                      <path
-                                        d="M8 7V3M16 7V3M3 11H21M5 19H19C20.1046 19 21 18.1046 21 17V7C21 5.89543 20.1046 5 19 5H5C3.89543 5 3 5.89543 3 7V17C3 18.1046 3.89543 19 5 19Z"
-                                        stroke="currentColor"
-                                        strokeWidth="2"
-                                        strokeLinecap="round"
-                                        strokeLinejoin="round"
-                                      />
-                                    </svg>
-                                    <span
-                                      className={
-                                        isDone
-                                          ? "line-through text-gray-400"
-                                          : undefined
-                                      }
-                                    >
-                                      {format(start, "dd.MM.yyyy")}
-                                    </span>
-                                  </span>
-                                  <span className="flex items-center gap-1">
-                                    <svg
-                                      width="16"
-                                      height="16"
-                                      fill="none"
-                                      viewBox="0 0 24 24"
-                                      className="inline-block align-middle text-gray-400"
-                                    >
-                                      <path
-                                        d="M12 6V12L16 14"
-                                        stroke="currentColor"
-                                        strokeWidth="2"
-                                        strokeLinecap="round"
-                                        strokeLinejoin="round"
-                                      />
-                                      <circle
-                                        cx="12"
-                                        cy="12"
-                                        r="10"
-                                        stroke="currentColor"
-                                        strokeWidth="2"
-                                      />
-                                    </svg>
-                                    <span
-                                      className={
-                                        isDone
-                                          ? "line-through text-gray-400"
-                                          : undefined
-                                      }
-                                    >
-                                      {format(start, "HH:mm")} –{" "}
-                                      {format(new Date(a.end), "HH:mm")}
-                                    </span>
-                                  </span>
-                                </div>
-
-                                {/* Notes row (if present) */}
-                                {a.notes && (
-                                  <div className="flex items-center gap-2 text-xs text-gray-700 mb-1 w-full">
-                                    <svg
-                                      width="16"
-                                      height="16"
-                                      fill="none"
-                                      viewBox="0 0 24 24"
-                                      className="inline-block align-middle text-gray-400"
-                                    >
-                                      <path
-                                        d="M4 19.5A2.5 2.5 0 0 1 6.5 17H19M17 21V5a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2Z"
-                                        stroke="currentColor"
-                                        strokeWidth="2"
-                                        strokeLinecap="round"
-                                        strokeLinejoin="round"
-                                      />
-                                    </svg>
-                                    {trimText(a.notes, 30)}
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          </HoverCardTrigger>
-                          <HoverCardContent className="relative text-sm min-w-[340px] bg-white rounded-xl shadow-lg p-4">
-                            <div
-                              className="absolute left-2 top-2 bottom-2 w-1 rounded"
-                              style={{ backgroundColor: color }}
-                            />
-                            <div className="pl-6">
-                              <div className="flex items-center gap-2 mb-1">
-                                <span className="text-xl font-semibold text-gray-800 flex items-center">
-                                  {a.title}
-                                  {getDateTag(new Date(a.start))}
-                                </span>
-                              </div>
-                              {/* <div className="flex flex-wrap items-center gap-3 text-sm text-gray-500 mb-1">
-                                <span className="flex items-center gap-1">
-                                  <FiFileText />
-                                  {format(new Date(a.start), "dd.MM.yyyy")}
-                                </span>
-                                <span className="flex items-center gap-1">
-                                  <FiFlag />
-                                  {format(new Date(a.start), "HH:mm")} –{" "}
-                                  {format(new Date(a.end), "HH:mm")}
-                                </span>
-                              </div> */}
-                              <div className="flex flex-col gap-1 text-sm text-gray-500 mb-1">
-                                <span className="flex items-center gap-1">
-                                  <svg
-                                    width="16"
-                                    height="16"
-                                    fill="none"
-                                    viewBox="0 0 24 24"
-                                    className="inline-block align-middle text-gray-400"
-                                  >
-                                    <path
-                                      d="M8 7V3M16 7V3M3 11H21M5 19H19C20.1046 19 21 18.1046 21 17V7C21 5.89543 20.1046 5 19 5H5C3.89543 5 3 5.89543 3 7V17C3 18.1046 3.89543 19 5 19Z"
-                                      stroke="currentColor"
-                                      strokeWidth="2"
-                                      strokeLinecap="round"
-                                      strokeLinejoin="round"
-                                    />
-                                  </svg>
-                                  <span
-                                    className={
-                                      isDone
-                                        ? "line-through text-gray-400"
-                                        : undefined
-                                    }
-                                  >
-                                    {format(start, "dd.MM.yyyy")}
-                                  </span>
-                                </span>
-                                <span className="flex items-center gap-1">
-                                  <svg
-                                    width="16"
-                                    height="16"
-                                    fill="none"
-                                    viewBox="0 0 24 24"
-                                    className="inline-block align-middle text-gray-400"
-                                  >
-                                    <path
-                                      d="M12 6V12L16 14"
-                                      stroke="currentColor"
-                                      strokeWidth="2"
-                                      strokeLinecap="round"
-                                      strokeLinejoin="round"
-                                    />
-                                    <circle
-                                      cx="12"
-                                      cy="12"
-                                      r="10"
-                                      stroke="currentColor"
-                                      strokeWidth="2"
-                                    />
-                                  </svg>
-                                  <span
-                                    className={
-                                      isDone
-                                        ? "line-through text-gray-400"
-                                        : undefined
-                                    }
-                                  >
-                                    {format(start, "HH:mm")} –{" "}
-                                    {format(new Date(a.end), "HH:mm")}
-                                  </span>
-                                </span>
-                              </div>
-                              {a.notes && (
-                                <div className="flex items-center gap-2 text-sm text-gray-400 mb-1">
-                                  <FiFileText />
-                                  <span className="text-xs text-gray-700">
-                                    {a.notes}
-                                  </span>
-                                </div>
-                              )}
-                              <div className="flex items-center gap-2 text-xs text-gray-400 italic mb-1">
-                                <FiUser /> Klient:{" "}
-                                <span className="not-italic text-gray-700">
-                                  {a.patient && patients.length > 0
-                                    ? (() => {
-                                        const p = patients.find(
-                                          (x) => x.id === a.patient
-                                        );
-                                        return p
-                                          ? `${p.firstname} ${p.lastname}`
-                                          : "--";
-                                      })()
-                                    : "--"}
-                                </span>
-                              </div>
-                              {a.location && (
-                                <div className="flex items-center gap-2 text-xs text-gray-400 italic mb-1">
-                                  <FiMapPin /> Ort:{" "}
-                                  <span className="not-italic text-gray-700">
-                                    {a.location}
-                                  </span>
-                                </div>
-                              )}
-                              {a.attachements && a.attachements.length > 0 && (
-                                <div className="flex items-center gap-2 text-xs text-gray-400 mb-1">
-                                  <FiPaperclip /> Anhänge:
-                                  {a.attachements.map((file, idx) => {
-                                    const { data } = supabase.storage
-                                      .from("attachments")
-                                      .getPublicUrl(file);
-                                    const fileName =
-                                      file.split("/").pop() || file;
-                                    return data && data.publicUrl ? (
-                                      <a
-                                        key={idx}
-                                        href={data.publicUrl}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="not-italic text-blue-700 underline"
-                                      >
-                                        {fileName}
-                                      </a>
-                                    ) : (
-                                      <span key={idx} className="text-red-600">
-                                        [Fehler: Datei nicht gefunden]
-                                      </span>
-                                    );
-                                  })}
-                                </div>
-                              )}
-                              <div className="flex items-center gap-2 text-xs text-gray-400 mb-1">
-                                <FiFlag /> Status:{" "}
-                                <span className="not-italic text-gray-700">
-                                  {a.status}
-                                </span>
-                              </div>
-                              {assignees.length > 0 && (
-                                <div className="flex items-center gap-2 text-xs text-gray-400 mb-1">
-                                  <FiUsers /> Zugewiesen:
-                                  {assignees
-                                    .filter((ass) => ass.appointment === a.id)
-                                    .map((ass, idx) => {
-                                      let name = ass.user;
-                                      if (ass.user_type === "patients") {
-                                        const p = patients.find(
-                                          (x) => x.id === ass.user
-                                        );
-                                        if (p)
-                                          name = `Patient: ${p.firstname} ${p.lastname}`;
-                                      } else if (
-                                        ass.user_type === "relatives"
-                                      ) {
-                                        const r = relatives.find(
-                                          (x) => x.id === ass.user
-                                        );
-                                        if (r)
-                                          name = `Angehörige: ${r.firstname} ${r.lastname}`;
-                                      }
-                                      return (
-                                        <span
-                                          key={idx}
-                                          className="not-italic text-purple-700"
-                                        >
-                                          {name}
-                                        </span>
-                                      );
-                                    })}
-                                </div>
-                              )}
-                              {activities.length > 0 && (
-                                <div className="flex flex-col gap-1 text-xs text-gray-400 mb-1">
-                                  <span>Aktivitäten:</span>
-                                  {activities
-                                    .filter((act) => act.appointment === a.id)
-                                    .map((act, idx) => (
-                                      <span
-                                        key={idx}
-                                        className="not-italic text-pink-700"
-                                      >
-                                        {act.type}: {act.content}
-                                      </span>
-                                    ))}
-                                </div>
-                              )}
-                              <div className="flex items-center gap-3 mt-2">
-                                <label className="flex items-center gap-1">
-                                  <input
-                                    type="checkbox"
-                                    className="accent-green-600 w-5 h-5 cursor-pointer"
-                                    checked={isDone}
-                                    onChange={() =>
-                                      toggleStatus(
-                                        a.id,
-                                        isDone ? "pending" : "done"
-                                      )
-                                    }
-                                  />
-                                  <span className="text-xs text-gray-500 select-none">
-                                    {isDone ? "Erledigt" : "Offen"}
-                                  </span>
-                                </label>
-                                <Button
-                                  size="icon"
-                                  variant="outline"
-                                  className="rounded-full border-gray-300 cursor-pointer"
-                                  onClick={() => setEditAppt(a)}
-                                  aria-label="Bearbeiten"
-                                >
-                                  <FiEdit2 className="w-4 h-4" />
-                                </Button>
-                                <Button
-                                  size="icon"
-                                  variant="ghost"
-                                  className="rounded-full cursor-pointer"
-                                  onClick={() => deleteAppt(a.id)}
-                                  aria-label="Löschen"
-                                >
-                                  <FiTrash2 className="w-4 h-4 text-red-500" />
-                                </Button>
-                              </div>
-                            </div>
-                          </HoverCardContent>
-                        </HoverCard>
-                      );
-                    })}
+                      const color = randomBgColor(a.id);
+  const start = new Date(a.start);
+  const end = new Date(a.end);
+  const hourStart = start.getHours() + start.getMinutes() / 60;
+  const hourEnd = end.getHours() + end.getMinutes() / 60;
+  // Only render in the slot where the appointment starts
+  if (start.getHours() !== hour || start.toDateString() !== day.toDateString()) return null;
+  const slotTop = (hourStart - hour) * hourHeight;
+  const slotHeight = Math.max(30, (hourEnd - hourStart) * hourHeight); // 30px min height
+  return (
+    <div
+      key={a.id}
+      style={{
+        position: "absolute",
+        left: 4,
+        right: 4,
+        top: slotTop,
+        height: slotHeight,
+        minHeight: 30,
+        zIndex: 2,
+        // Add border and background for the card
+      }}
+    >
+      <AppointmentHoverCard
+        appointment={a}
+        patients={patients}
+        relatives={relatives}
+        assignees={assignees}
+        activities={activities}
+        userEmail={userEmail}
+        userId={userId}
+        getDateTag={getDateTag}
+        onEdit={setEditAppt}
+        onDelete={deleteAppt}
+        onToggleStatus={toggleStatus}
+        supabase={supabase}
+        showDetails={true}
+        
+      />
+    </div>
+  );
+})}
                   </div>
                 );
               })}
@@ -802,24 +452,26 @@ export default function WeekView() {
           ))}
         </div>
       </div>
+
       {/* Edit dialog */}
       {editAppt && (
-        <AppointmentDialog
+        <EditAppointmentDialog
           appointment={editAppt}
           onSuccess={() => {
             setEditAppt(null);
-            // refetch appointments
-            supabase
-              .from("appointments")
-              .select("*, category:category(*)")
-              .then(
-                ({ data }: { data: AppointmentWithCategory[] | null }) =>
-                  data && setAppointments(data)
-              );
           }}
           trigger={null}
           isOpen={editOpen}
           onOpenChange={handleEditDialogChange}
+          supabase={supabase}
+          refreshAppointments={() => {
+            supabase
+              .from("appointments")
+              .select("*, category:category(*)")
+              .then(({ data }) => {
+                if (data) setAppointments(data);
+              });
+          }}
         />
       )}
     </div>

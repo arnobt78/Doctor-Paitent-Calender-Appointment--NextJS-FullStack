@@ -11,16 +11,15 @@ import {
   Activity,
   Relative,
 } from "@/types/types";
-// import { supabase } from "@/lib/supabaseClient";
-
-// Import Supabase Auth helpers
 import { createClientComponentClient } from "@supabase/auth-helpers-nextjs";
 import { useEffect as useAuthEffect, useState as useAuthState } from "react";
 import type { User } from "@supabase/supabase-js";
 import Filters from "./Filters";
 import AppointmentDialog from "./AppointmentDialog";
+import EditAppointmentDialog from "./EditAppointmentDialog";
 import { useDateContext } from "@/context/DateContext";
 import { Button } from "@/components/ui/button";
+import { getUserAppointmentPermission } from "@/lib/permissions";
 import {
   FiEdit2,
   FiTrash2,
@@ -34,25 +33,12 @@ import {
 import { MdCategory } from "react-icons/md";
 import AppointmentListSkeleton from "./AppointmentListSkeleton";
 import SearchBar from "./SearchBar";
-
-const bgColors = [
-  "#F59E0B",
-  "#10B981",
-  "#3B82F6",
-  "#EC4899",
-  "#8B5CF6",
-  "#EF4444",
-  "#14B8A6",
-];
-const randomBgColor = (seed: string) =>
-  bgColors[
-    seed.split("").reduce((a, c) => a + c.charCodeAt(0), 0) % bgColors.length
-  ];
+import { useAppointmentColor } from "@/context/AppointmentColorContext";
 
 type FullAppointment = Appointment & {
   category_data?: Category;
   patient_data?: Patient;
-  appointment_assignee?: AppointmentAssignee[];
+  appointment_assignee?: (AppointmentAssignee & { invited_email?: string })[];
   activities?: Activity[];
 };
 
@@ -156,6 +142,8 @@ export default function AppointmentList() {
   const [editOpen, setEditOpen] = useState(false);
   const [search, setSearch] = useState("");
 
+  const { randomBgColor } = useAppointmentColor();
+
   // Fetch categories, patients, relatives on mount
   useEffect(() => {
     (async () => {
@@ -181,31 +169,94 @@ export default function AppointmentList() {
 
   const fetchAppointments = useCallback(async () => {
     if (!user) return;
+    if (!user) return;
     setLoading(true);
-    let query = supabase
+    // Fetch owned appointments
+    const { data: owned } = await supabase
       .from("appointments")
-      .select(
-        "*, category:category(*), patient:patients(*), appointment_assignee:appointment_assignee(*), activities:activities(*)"
-      )
+      .select("*, category:category(*), patient:patients(*), appointment_assignee:appointment_assignee(*), activities:activities(*)")
       .eq("user_id", user.id)
       .order("start", { ascending: true });
+
+    // Fetch assigned appointments by user
+    const { data: assignedByUser } = await supabase
+      .from("appointment_assignee")
+      .select("appointment, permission, status, appointment_data:appointment(*), invited_email, id, created_at, user, user_type")
+      .eq("user", user.id)
+      .eq("status", "accepted");
+
+    // Fetch assigned appointments by invited_email
+    let userEmail: string | null = null;
+    const { data: userData } = await supabase.auth.getUser();
+    userEmail = userData?.user?.email || null;
+    let assignedByEmail: (AppointmentAssignee & { appointment_data: Appointment })[] = [];
+    if (userEmail) {
+      const { data: assignedEmail } = await supabase
+        .from("appointment_assignee")
+        .select("appointment, permission, status, appointment_data:appointment(*), invited_email, id, created_at, user, user_type")
+        .eq("invited_email", userEmail)
+        .eq("status", "accepted");
+      assignedByEmail = (assignedEmail || []).map((a) => ({
+        ...a,
+        appointment_data: Array.isArray(a.appointment_data)
+          ? a.appointment_data[0]
+          : a.appointment_data,
+      }));
+    }
+    // Merge assigned appointments
+    type AppointmentWithAssignees = FullAppointment & { appointment_assignee?: AppointmentAssignee[] };
+    const assignedAppointments: AppointmentWithAssignees[] = [...(assignedByUser || []), ...assignedByEmail]
+      .filter((a) => typeof a.permission === "string" && ["read", "write", "full"].includes(a.permission))
+      .map((a) => {
+        const apptData = Array.isArray(a.appointment_data)
+          ? a.appointment_data[0]
+          : a.appointment_data;
+        return { ...apptData, appointment_assignee: [a] };
+      });
+    // Merge and deduplicate, always include all assignees for each appointment
+    const allAppointments: AppointmentWithAssignees[] = [...(owned || []), ...assignedAppointments].map((appt) => ({ ...appt }));
+    const deduped: AppointmentWithAssignees[] = allAppointments.reduce((acc: AppointmentWithAssignees[], curr: AppointmentWithAssignees) => {
+      if (!curr || !curr.id) return acc;
+      const existing = acc.find((a) => a.id === curr.id);
+      if (existing) {
+        existing.appointment_assignee = [
+          ...(existing.appointment_assignee || []),
+          ...(curr.appointment_assignee || [])
+        ].filter((v, i, arr) => v && v.id && arr.findIndex((b) => b.id === v.id) === i);
+      } else {
+        acc.push(curr);
+      }
+      return acc;
+    }, []);
+
+    // Apply filters
+    let filtered = deduped;
     if (date) {
       const day = new Date(date);
       day.setHours(0, 0, 0, 0);
       const dayStart = new Date(day);
       const dayEnd = new Date(day);
       dayEnd.setHours(23, 59, 59, 999);
-      query = query
-        .gte("start", dayStart.toISOString())
-        .lte("start", dayEnd.toISOString());
+      filtered = filtered.filter((a: AppointmentWithAssignees) =>
+        new Date(a.start) >= dayStart &&
+        new Date(a.start) <= dayEnd
+      );
     }
-    if (category) query = query.eq("category", category);
-    if (patient) query = query.eq("patient", patient);
-    if (status) query = query.eq("status", status);
-    const { data } = await query;
-    setAppointments(data as FullAppointment[]);
+    if (category) filtered = filtered.filter((a: AppointmentWithAssignees) => a.category === category);
+    if (patient) filtered = filtered.filter((a: AppointmentWithAssignees) => a.patient === patient);
+    if (status) filtered = filtered.filter((a: AppointmentWithAssignees) => a.status === status);
+    setAppointments(filtered as FullAppointment[]);
     setLoading(false);
   }, [category, patient, date, status, user, supabase]);
+  // Helper: get permission for current user on an appointment
+  // Use shared permission helper
+  function getUserPermission(appt: FullAppointment): "owner" | "full" | "write" | "read" | null {
+    return getUserAppointmentPermission({
+      appointment: appt,
+      assignees: appt.appointment_assignee,
+      userId: user?.id,
+    });
+  }
 
   useEffect(() => {
     if (user) fetchAppointments();
@@ -379,6 +430,7 @@ export default function AppointmentList() {
               <DateHeadline date={date} />
               <div className="flex flex-col gap-4">
                 {appts.map((appt, i) => {
+                  // console.log('[AppointmentList] Appointment Card:', appt);
                   // --- Begin: Restored full-featured appointment card ---
                 const start = new Date(appt.start);
                 const now = new Date();
@@ -394,6 +446,36 @@ export default function AppointmentList() {
                     <MdCategory className="w-4 h-4 text-gray-400" />
                   </span>
                 ) : null;
+
+// Deduplicate assignees by user + invited_email
+const filteredAssignees = appt.appointment_assignee || [];
+const dedupedMap = new Map();
+for (const ass of filteredAssignees) {
+  const key = `${ass.user || ""}|${ass.invited_email || ""}`;
+  if (!dedupedMap.has(key)) {
+    dedupedMap.set(key, ass);
+    continue;
+  }
+  // Prefer accepted over pending, prefer higher permission
+  const prev = dedupedMap.get(key) as AppointmentAssignee;
+  const statusOrder: Record<'accepted' | 'pending', number> = { accepted: 2, pending: 1 };
+  const permOrder: Record<'full' | 'write' | 'read', number> = { full: 3, write: 2, read: 1 };
+  // Type guards for status and permission
+  const isValidStatus = (s: unknown): s is 'accepted' | 'pending' => s === 'accepted' || s === 'pending';
+  const isValidPerm = (p: unknown): p is 'full' | 'write' | 'read' => p === 'full' || p === 'write' || p === 'read';
+  const prevStatus = isValidStatus(prev.status) ? statusOrder[prev.status] : 0;
+  const currStatus = isValidStatus(ass.status) ? statusOrder[ass.status] : 0;
+  const prevPerm = isValidPerm(prev.permission) ? permOrder[prev.permission] : 0;
+  const currPerm = isValidPerm(ass.permission) ? permOrder[ass.permission] : 0;
+  if (
+    currStatus > prevStatus ||
+    (currStatus === prevStatus && currPerm > prevPerm)
+  ) {
+    dedupedMap.set(key, ass);
+  }
+}
+const dedupedAssignees = Array.from(dedupedMap.values());
+                
 
 
                 return (
@@ -481,6 +563,7 @@ export default function AppointmentList() {
                           </span>
                         </span>
                       </div>
+
                       {/* Notes with icon */}
                       {appt.notes && (
                         <div className="flex items-center gap-2 text-sm mb-1">
@@ -500,6 +583,7 @@ export default function AppointmentList() {
                           </span>
                         </div>
                       )}
+
                       {/* Category with icon */}
                       {appt.category_data && (
                         <div className="flex items-center gap-2 text-xs text-gray-500 mb-1">
@@ -507,6 +591,7 @@ export default function AppointmentList() {
                           <span>{appt.category_data.label}</span>
                         </div>
                       )}
+
                       {/* Client name with icon */}
                       <div className="flex items-center gap-2 text-xs text-gray-400 italic mt-1">
                         <FiUser className="w-4 h-4" />
@@ -529,6 +614,7 @@ export default function AppointmentList() {
                             : "--"}
                         </span>
                       </div>
+
                       {/* Location with icon */}
                       <div className="flex items-center gap-2 text-xs text-gray-400 italic mt-1">
                         <FiMapPin className="w-4 h-4" />
@@ -537,6 +623,7 @@ export default function AppointmentList() {
                           {appt.location || "--"}
                         </span>
                       </div>
+
                       {/* Attachments with icon */}
                       {appt.attachements && appt.attachements.length > 0 && (
                         <div className="flex items-center gap-2 text-xs text-gray-400 mt-1">
@@ -575,6 +662,7 @@ export default function AppointmentList() {
                           })}
                         </div>
                       )}
+
                       {/* Status with icon */}
                       <div className="flex items-center gap-2 text-xs text-gray-400 mt-1">
                         <FiFlag className="w-4 h-4" />
@@ -583,43 +671,84 @@ export default function AppointmentList() {
                           {appt.status || "pending"}
                         </span>
                       </div>
-                      {/* Assignees with icon */}
-                      {appt.appointment_assignee &&
-                        appt.appointment_assignee.length > 0 && (
-                          <div className="flex items-center gap-2 text-xs text-gray-400 mt-1">
-                            <FiUsers className="w-4 h-4" />
-                            <span>Zugewiesen:</span>
-                            {appt.appointment_assignee.map((assignee, idx) => {
-                              let name = assignee.user;
-                              if (assignee.user_type === "patients") {
-                                const p = patients.find(
-                                  (x) => x.id === assignee.user
+
+                      {/* Refer to: patient/relative names */}
+                    {dedupedAssignees.length > 0 && (
+                      <div className="flex items-center gap-2 text-xs text-gray-400 mb-1">
+                        <FiUsers /> Refer to:
+                        {dedupedAssignees
+                          .map((ass, idx) => {
+                            let patientName = "";
+                            if (ass.user_type === "patients") {
+                              const p = patients.find((x) => x.id === ass.user);
+                              if (p) patientName = `Patient: ${p.firstname} ${p.lastname}`;
+                            } else if (ass.user_type === "relatives") {
+                              const r = relatives.find((x) => x.id === ass.user);
+                              if (r) patientName = `Angehörige: ${r.firstname} ${r.lastname}`;
+                            }
+                            return patientName ? (
+                              <span key={ass.id || idx} className="not-italic text-purple-700">
+                                {patientName}
+                              </span>
+                            ) : null;
+                          })
+                          .filter(Boolean)}
+                      </div>
+                    )}
+                    {/* Assigned by: invited_email, user id, or owner */}
+                    {dedupedAssignees.length > 0 && (
+                      <div className="flex items-center gap-2 text-xs text-gray-400 mb-1">
+                        <FiUsers /> Assigned by:
+                        {dedupedAssignees
+                          .map((ass, idx) => {
+                            let patientName = "";
+                            if (ass.user_type === "patients") {
+                              const p = patients.find((x) => x.id === ass.user);
+                              if (p) patientName = `Patient: ${p.firstname} ${p.lastname}`;
+                            } else if (ass.user_type === "relatives") {
+                              const r = relatives.find((x) => x.id === ass.user);
+                              if (r) patientName = `Angehörige: ${r.firstname} ${r.lastname}`;
+                            }
+                            // Only show if not patient/relative
+                            if (!patientName) {
+                              if (ass.invited_email) {
+                                return (
+                                  <span key={ass.id || idx} className="not-italic text-blue-700">
+                                    {ass.invited_email}
+                                  </span>
                                 );
-                                if (p)
-                                  name = `Patient: ${p.firstname} ${p.lastname}`;
-                              } else if (assignee.user_type === "relatives") {
-                                const r = relatives.find(
-                                  (x) => x.id === assignee.user
+                              } else if (ass.user === appt.user_id) {
+                                // Owner
+                                return (
+                                  <span key={ass.id || idx} className="not-italic text-green-700">
+                                    you ({user?.email || "owner"})
+                                  </span>
                                 );
-                                if (r)
-                                  name = `Angehörige: ${r.firstname} ${r.lastname}`;
+                              } else if (ass.user) {
+                                return (
+                                  <span key={ass.id || idx} className="not-italic text-gray-700">
+                                    {ass.user}
+                                  </span>
+                                );
                               }
-                              return (
-                                <span
-                                  key={idx}
-                                  className="not-italic text-purple-700"
-                                >
-                                  {name}
-                                </span>
-                              );
-                            })}
-                          </div>
+                            }
+                            return null;
+                          })
+                          .filter(Boolean)}
+                        {/* If no assignee matched owner, show owner explicitly */}
+                        {dedupedAssignees.every(ass => ass.user !== appt.user_id) && appt.user_id && (
+                          <span key={appt.user_id} className="not-italic text-green-700">
+                            you ({user?.email || "owner"})
+                          </span>
                         )}
-                      {/* Activities */}
+                      </div>
+                    )}
+                      
                       {appt.activities && appt.activities.length > 0 && (
-                        <div className="flex flex-col gap-1 text-xs text-gray-400 mt-1">
-                          <span>Aktivitäten:</span>
-                          {appt.activities.map((act, idx) => (
+                      <div className="flex flex-col gap-1 text-xs text-gray-400 mb-1">
+                        <span>Aktivitäten:</span>
+                        {appt.activities
+                          .map((act, idx) => (
                             <span
                               key={idx}
                               className="not-italic text-pink-700"
@@ -627,9 +756,10 @@ export default function AppointmentList() {
                               {act.type}: {act.content}
                             </span>
                           ))}
-                        </div>
-                      )}
+                      </div>
+                    )}
                     </div>
+
                     {/* Actions column */}
                     <div className="flex flex-col items-center gap-3 min-w-[56px] py-4 px-2 justify-center">
                       <label className="flex flex-col items-center gap-1">
@@ -640,48 +770,65 @@ export default function AppointmentList() {
                           onChange={() =>
                             toggleStatus(appt.id, isDone ? "pending" : "done")
                           }
+                          disabled={(() => {
+                            const perm = getUserPermission(appt);
+                            // Only owner, full, or write can toggle status
+                            return perm !== "owner" && perm !== "full" && perm !== "write";
+                          })()}
                         />
                         <span className="text-xs text-gray-500 select-none">
                           {isDone ? "Erledigt" : "Offen"}
                         </span>
                       </label>
-                      <Button
-                        size="icon"
-                        variant="outline"
-                        className="rounded-full border-gray-300 cursor-pointer hover:bg-gray-100"
-                        onClick={() => handleEdit(appt)}
-                        aria-label="Bearbeiten"
-                      >
-                        <FiEdit2 className="w-4 h-4" />
-                      </Button>
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        className="rounded-full cursor-pointer hover:bg-red-100"
-                        onClick={() => deleteAppt(appt.id)}
-                        aria-label="Löschen"
-                      >
-                        <FiTrash2 className="w-4 h-4 text-red-500" />
-                      </Button>
+                      {/* Only show edit/delete if user is owner or has 'full' permission */}
+                      {(() => {
+                        const perm = getUserPermission(appt);
+                        // Only owner or full can edit/delete
+                        if (perm === "owner" || perm === "full") {
+                          return <>
+                            <Button
+                              size="icon"
+                              variant="outline"
+                              className="rounded-full border-gray-300 cursor-pointer hover:bg-gray-100"
+                              onClick={() => handleEdit(appt)}
+                              aria-label="Bearbeiten"
+                            >
+                              <FiEdit2 className="w-4 h-4" />
+                            </Button>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="rounded-full cursor-pointer hover:bg-red-100"
+                              onClick={() => deleteAppt(appt.id)}
+                              aria-label="Löschen"
+                            >
+                              <FiTrash2 className="w-4 h-4 text-red-500" />
+                            </Button>
+                          </>;
+                        }
+                        return null;
+                      })()}
                     </div>
                   </div>
                 );
                 // --- End: Restored full-featured appointment card ---
-              })}
+                })}
+              </div>
             </div>
-          </div>
-        ))}
-      </div>
-                )}
+          ))}
+        </div>
+      )}
 
       {/* Edit dialog */}
       {editAppt ? (
-        <AppointmentDialog
+        <EditAppointmentDialog
           appointment={editAppt}
           onSuccess={handleEditSuccess}
           trigger={undefined}
           isOpen={editOpen}
           onOpenChange={handleEditDialogChange}
+          supabase={supabase}
+          refreshAppointments={fetchAppointments}
         />
       ) : null}
     </div>

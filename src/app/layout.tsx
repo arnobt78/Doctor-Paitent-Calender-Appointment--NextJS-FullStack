@@ -36,7 +36,7 @@ export const metadata: Metadata = {
     title: "Vocare Kalender – Terminplanung & Monatsansicht für Deutschland",
     description:
       "Vocare Kalender: Intelligente Terminplanung, Monats-, Wochen- und Listenansicht. Perfekt für Praxen, Teams und Einzelpersonen in Deutschland.",
-    url: "https://vocare-kalender.de/",
+    url: "https://doctor-patient-calendar-appointment.vercel.app/",
     siteName: "Vocare Kalender",
     locale: "de_DE",
     type: "website",
@@ -50,23 +50,16 @@ export const metadata: Metadata = {
   },
 };
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+import AuthLayout from "./AuthLayout";
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="de">
       <head>
         <link rel="icon" type="image/x-icon" href="/favicon.ico" />
       </head>
-      <body className={cn("min-h-screen bg-gray-50 text-gray-900", inter.className)}>
-        <AuthGuard>
-          <DateProvider>
-            <Navbar />
-            {children}
-          </DateProvider>
-        </AuthGuard>
+      <body>
+        <AuthLayout>{children}</AuthLayout>
       </body>
     </html>
   );

@@ -183,10 +183,40 @@ export default function AppointmentList() {
 
     console.log('DEBUG - Fetched owned appointments:', owned);
 
+    // --- NEW: Fetch dashboard access for invited users ---
+    const { data: dashboardAccess } = await supabase
+      .from("dashboard_access")
+      .select("owner_user_id")
+      .eq("invited_user_id", user.id)
+      .eq("status", "accepted");
+    console.log('DEBUG - Fetched dashboard access:', dashboardAccess);
+
+    // Define type for dashboardAccess rows
+    type DashboardAccessRow = { owner_user_id: string };
+    // Define type for shared appointments (FullAppointment)
+    let sharedAppointments: FullAppointment[] = [];
+    if (dashboardAccess && dashboardAccess.length > 0) {
+      const ownerIds = (dashboardAccess as DashboardAccessRow[]).map((d) => d.owner_user_id).filter(Boolean);
+      if (ownerIds.length > 0) {
+        const { data: shared } = await supabase
+          .from("appointments")
+          .select("*, category:category(*), patient:patients(*), appointment_assignee:appointment_assignee(*), activities:activities(*)")
+          .in("user_id", ownerIds)
+          .order("start", { ascending: true });
+        sharedAppointments = (shared || []) as FullAppointment[];
+        console.log('DEBUG - Fetched shared appointments:', sharedAppointments);
+      }
+    }
+
     // Fetch all unique user IDs from appointments to get owner emails
     const allUserIds = new Set<string>();
     if (owned) {
       owned.forEach(appt => {
+        if (appt.user_id) allUserIds.add(appt.user_id);
+      });
+    }
+    if (sharedAppointments && sharedAppointments.length > 0) {
+      sharedAppointments.forEach(appt => {
         if (appt.user_id) allUserIds.add(appt.user_id);
       });
     }
@@ -256,7 +286,8 @@ export default function AppointmentList() {
     // Set owner users state
     setOwnerUsers(allOwnerUsers || []);
     // Merge and deduplicate, always include all assignees for each appointment
-    const allAppointments: AppointmentWithAssignees[] = [...(owned || []), ...assignedAppointments].map((appt) => ({ ...appt }));
+    // Merge shared appointments for invited dashboard access
+    const allAppointments: AppointmentWithAssignees[] = [...(owned || []), ...sharedAppointments, ...assignedAppointments].map((appt) => ({ ...appt }));
     const deduped: AppointmentWithAssignees[] = allAppointments.reduce((acc: AppointmentWithAssignees[], curr: AppointmentWithAssignees) => {
       if (!curr || !curr.id) return acc;
       const existing = acc.find((a) => a.id === curr.id);

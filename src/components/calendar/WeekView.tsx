@@ -73,6 +73,28 @@ export default function WeekView() {
         .from("appointments")
         .select("*, category:category(*), appointment_assignee:appointment_assignee(*)")
         .eq("user_id", uid);
+
+      // --- NEW: Fetch dashboard access for invited users ---
+      const { data: dashboardAccess } = await supabase
+        .from("dashboard_access")
+        .select("owner_user_id")
+        .eq("invited_user_id", uid)
+        .eq("status", "accepted");
+      // Define type for dashboardAccess rows
+      type DashboardAccessRow = { owner_user_id: string };
+      // Define type for shared appointments (AppointmentWithCategory)
+      let sharedAppointments: AppointmentWithCategory[] = [];
+      if (dashboardAccess && dashboardAccess.length > 0) {
+        const ownerIds = (dashboardAccess as DashboardAccessRow[]).map((d) => d.owner_user_id).filter(Boolean);
+        if (ownerIds.length > 0) {
+          const { data: shared } = await supabase
+            .from("appointments")
+            .select("*, category:category(*), appointment_assignee:appointment_assignee(*)")
+            .in("user_id", ownerIds);
+          sharedAppointments = (shared || []) as AppointmentWithCategory[];
+        }
+      }
+
       // Fetch assigned appointments by user
       const { data: assignedByUser } = await supabase
         .from("appointment_assignee")
@@ -123,6 +145,11 @@ export default function WeekView() {
           if (appt.user_id) allUserIds.add(appt.user_id);
         });
       }
+      if (sharedAppointments && sharedAppointments.length > 0) {
+        sharedAppointments.forEach(appt => {
+          if (appt.user_id) allUserIds.add(appt.user_id);
+        });
+      }
       assignedAppointments.forEach(appt => {
         if (appt.user_id) allUserIds.add(appt.user_id);
       });
@@ -135,7 +162,7 @@ export default function WeekView() {
 
       setOwnerUsers(allOwnerUsers || []);
       // Merge and deduplicate, always include all assignees for each appointment
-      const allAppointments: AppointmentWithAssignees[] = [...(owned || []), ...assignedAppointments].map((appt) => ({ ...appt }));
+      const allAppointments: AppointmentWithAssignees[] = [...(owned || []), ...sharedAppointments, ...assignedAppointments].map((appt) => ({ ...appt }));
       const deduped: AppointmentWithAssignees[] = allAppointments.reduce((acc: AppointmentWithAssignees[], curr: AppointmentWithAssignees) => {
         if (!curr || !curr.id) return acc;
         const existing = acc.find((a) => a.id === curr.id);

@@ -135,6 +135,7 @@ export default function AppointmentList() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [patients, setPatients] = useState<Patient[]>([]);
   const [relatives, setRelatives] = useState<Relative[]>([]);
+  const [ownerUsers, setOwnerUsers] = useState<{ id: string, email: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const { currentDate } = useDateContext();
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -150,8 +151,10 @@ export default function AppointmentList() {
       const { data: catData } = await supabase.from("categories").select("*");
       setCategories(catData || []);
       const { data: patData } = await supabase.from("patients").select("*");
+      console.log('DEBUG - Fetched patients:', patData);
       setPatients(patData || []);
       const { data: rels } = await supabase.from("relatives").select("*");
+      console.log('DEBUG - Fetched relatives:', rels);
       setRelatives(rels || []);
     })();
   }, [supabase]);
@@ -178,12 +181,32 @@ export default function AppointmentList() {
       .eq("user_id", user.id)
       .order("start", { ascending: true });
 
+    console.log('DEBUG - Fetched owned appointments:', owned);
+
+    // Fetch all unique user IDs from appointments to get owner emails
+    const allUserIds = new Set<string>();
+    if (owned) {
+      owned.forEach(appt => {
+        if (appt.user_id) allUserIds.add(appt.user_id);
+      });
+    }
+
+    // Fetch user data for all owners
+    const { data: ownerUsers } = await supabase
+      .from("users")
+      .select("id, email")
+      .in("id", Array.from(allUserIds));
+
+    console.log('DEBUG - Fetched owner users:', ownerUsers);
+
     // Fetch assigned appointments by user
     const { data: assignedByUser } = await supabase
       .from("appointment_assignee")
       .select("appointment, permission, status, appointment_data:appointment(*), invited_email, id, created_at, user, user_type")
       .eq("user", user.id)
       .eq("status", "accepted");
+
+    console.log('DEBUG - Fetched assigned appointments by user:', assignedByUser);
 
     // Fetch assigned appointments by invited_email
     let userEmail: string | null = null;
@@ -202,6 +225,9 @@ export default function AppointmentList() {
           ? a.appointment_data[0]
           : a.appointment_data,
       }));
+
+      console.log('DEBUG - Fetched assigned appointments by email:', assignedEmail);
+      console.log('DEBUG - Processed assignedByEmail:', assignedByEmail);
     }
     // Merge assigned appointments
     type AppointmentWithAssignees = FullAppointment & { appointment_assignee?: AppointmentAssignee[] };
@@ -213,6 +239,22 @@ export default function AppointmentList() {
           : a.appointment_data;
         return { ...apptData, appointment_assignee: [a] };
       });
+
+    // Add owner user IDs from assigned appointments
+    assignedAppointments.forEach(appt => {
+      if (appt.user_id) allUserIds.add(appt.user_id);
+    });
+
+    // Fetch user data for all owners (including assigned appointments)
+    const { data: allOwnerUsers } = await supabase
+      .from("users")
+      .select("id, email")
+      .in("id", Array.from(allUserIds));
+
+    console.log('DEBUG - Fetched all owner users:', allOwnerUsers);
+
+    // Set owner users state
+    setOwnerUsers(allOwnerUsers || []);
     // Merge and deduplicate, always include all assignees for each appointment
     const allAppointments: AppointmentWithAssignees[] = [...(owned || []), ...assignedAppointments].map((appt) => ({ ...appt }));
     const deduped: AppointmentWithAssignees[] = allAppointments.reduce((acc: AppointmentWithAssignees[], curr: AppointmentWithAssignees) => {
@@ -259,8 +301,8 @@ export default function AppointmentList() {
   }
 
   useEffect(() => {
-    if (user) fetchAppointments();
-  }, [fetchAppointments, currentDate, user]);
+    if (user && patients.length > 0) fetchAppointments();
+  }, [fetchAppointments, currentDate, user, patients]);
 
   const toggleStatus = async (id: string, newStatus: string) => {
     await supabase
@@ -402,14 +444,14 @@ export default function AppointmentList() {
       </div>
       {/* Only show the 'Kein Treffer gefunden' message if there is a search term */}
       {/* {filteredAppointments.length === 0 && search.trim() && ( */}
-      
+
       {/* Show empty state if no appointments at all (before filtering) */}
       {appointments.length === 0 && (
         <div className="flex items-center justify-center min-h-[50vh]">
           <div className="text-center text-gray-500 text-lg">
-              Kein Termin gefunden!
+            Kein Termin gefunden!
           </div>
-      </div>
+        </div>
       )}
 
       {/* Only show the 'Kein Treffer gefunden' message if there are appointments but none match the filter/search */}
@@ -430,388 +472,458 @@ export default function AppointmentList() {
               <DateHeadline date={date} />
               <div className="flex flex-col gap-4">
                 {appts.map((appt, i) => {
-                  // console.log('[AppointmentList] Appointment Card:', appt);
                   // --- Begin: Restored full-featured appointment card ---
-                const start = new Date(appt.start);
-                const now = new Date();
-                const isToday =
-                  start.getFullYear() === now.getFullYear() &&
-                  start.getMonth() === now.getMonth() &&
-                  start.getDate() === now.getDate();
-                // Always use a stable random color from bgColors for the left border if no category color is set
-                const color = appt.category_data?.color || randomBgColor(appt.id);
-                const isDone = appt.status === "done";
-                const categoryIcon = appt.category_data?.icon ? (
-                  <span className="inline-flex items-center mr-1">
-                    <MdCategory className="w-4 h-4 text-gray-400" />
-                  </span>
-                ) : null;
+                  const start = new Date(appt.start);
+                  const now = new Date();
+                  const isToday =
+                    start.getFullYear() === now.getFullYear() &&
+                    start.getMonth() === now.getMonth() &&
+                    start.getDate() === now.getDate();
+                  // Always use a stable random color from bgColors for the left border if no category color is set
+                  const color = appt.category_data?.color || randomBgColor(appt.id);
+                  const isDone = appt.status === "done";
+                  const categoryIcon = appt.category_data?.icon ? (
+                    <span className="inline-flex items-center mr-1">
+                      <MdCategory className="w-4 h-4 text-gray-400" />
+                    </span>
+                  ) : null;
 
-// Deduplicate assignees by user + invited_email
-const filteredAssignees = appt.appointment_assignee || [];
-const dedupedMap = new Map();
-for (const ass of filteredAssignees) {
-  const key = `${ass.user || ""}|${ass.invited_email || ""}`;
-  if (!dedupedMap.has(key)) {
-    dedupedMap.set(key, ass);
-    continue;
-  }
-  // Prefer accepted over pending, prefer higher permission
-  const prev = dedupedMap.get(key) as AppointmentAssignee;
-  const statusOrder: Record<'accepted' | 'pending', number> = { accepted: 2, pending: 1 };
-  const permOrder: Record<'full' | 'write' | 'read', number> = { full: 3, write: 2, read: 1 };
-  // Type guards for status and permission
-  const isValidStatus = (s: unknown): s is 'accepted' | 'pending' => s === 'accepted' || s === 'pending';
-  const isValidPerm = (p: unknown): p is 'full' | 'write' | 'read' => p === 'full' || p === 'write' || p === 'read';
-  const prevStatus = isValidStatus(prev.status) ? statusOrder[prev.status] : 0;
-  const currStatus = isValidStatus(ass.status) ? statusOrder[ass.status] : 0;
-  const prevPerm = isValidPerm(prev.permission) ? permOrder[prev.permission] : 0;
-  const currPerm = isValidPerm(ass.permission) ? permOrder[ass.permission] : 0;
-  if (
-    currStatus > prevStatus ||
-    (currStatus === prevStatus && currPerm > prevPerm)
-  ) {
-    dedupedMap.set(key, ass);
-  }
-}
-const dedupedAssignees = Array.from(dedupedMap.values());
-                
+                  // Deduplicate assignees by user + invited_email
+                  const filteredAssignees = appt.appointment_assignee || [];
+                  const dedupedMap = new Map();
+                  for (const ass of filteredAssignees) {
+                    const key = `${ass.user || ""}|${ass.invited_email || ""}`;
+                    if (!dedupedMap.has(key)) {
+                      dedupedMap.set(key, ass);
+                      continue;
+                    }
+                    // Prefer accepted over pending, prefer higher permission
+                    const prev = dedupedMap.get(key) as AppointmentAssignee;
+                    const statusOrder: Record<'accepted' | 'pending', number> = { accepted: 2, pending: 1 };
+                    const permOrder: Record<'full' | 'write' | 'read', number> = { full: 3, write: 2, read: 1 };
+                    // Type guards for status and permission
+                    const isValidStatus = (s: unknown): s is 'accepted' | 'pending' => s === 'accepted' || s === 'pending';
+                    const isValidPerm = (p: unknown): p is 'full' | 'write' | 'read' => p === 'full' || p === 'write' || p === 'read';
+                    const prevStatus = isValidStatus(prev.status) ? statusOrder[prev.status] : 0;
+                    const currStatus = isValidStatus(ass.status) ? statusOrder[ass.status] : 0;
+                    const prevPerm = isValidPerm(prev.permission) ? permOrder[prev.permission] : 0;
+                    const currPerm = isValidPerm(ass.permission) ? permOrder[ass.permission] : 0;
+                    if (
+                      currStatus > prevStatus ||
+                      (currStatus === prevStatus && currPerm > prevPerm)
+                    ) {
+                      dedupedMap.set(key, ass);
+                    }
+                  }
+                  const dedupedAssignees = Array.from(dedupedMap.values());
+
+                  // DEBUG: Log data for Refer to and Assigned by
+                  console.log('DEBUG Appointment Card:', {
+                    appt,
+                    dedupedAssignees,
+                    patients,
+                    relatives,
+                    user
+                  });
+
+                  // Additional debugging for the specific issue
+                  console.log('DEBUG - Refer to section data:', {
+                    appointmentId: appt.id,
+                    appointmentAssignees: appt.appointment_assignee,
+                    dedupedAssignees,
+                    patientsData: patients,
+                    relativesData: relatives,
+                    ownerUsersData: ownerUsers,
+                    currentUser: user
+                  });
+
+                  // Debug patient data specifically
+                  console.log('DEBUG - Patient data for appointment:', {
+                    appointmentId: appt.id,
+                    patientField: appt.patient,
+                    patientType: typeof appt.patient,
+                    patientData: appt.patient_data,
+                    foundPatient: patients.find(p => p.id === appt.patient)
+                  });
+
+                  // Debug the specific fields we're trying to display
+                  if (dedupedAssignees.length > 0) {
+                    dedupedAssignees.forEach((ass, idx) => {
+                      console.log(`DEBUG - Assignee ${idx}:`, {
+                        assigneeId: ass.id,
+                        userId: ass.user,
+                        userType: ass.user_type,
+                        invitedEmail: ass.invited_email,
+                        status: ass.status,
+                        permission: ass.permission,
+                        foundPatient: patients.find(p => p.id === ass.user),
+                        foundRelative: relatives.find(r => r.id === ass.user)
+                      });
+                    });
+                  }
+                  // console.log('[AppointmentList] Appointment Card:', appt);
 
 
-                return (
-                  <div
-                    key={appt.id}
-                    data-today={isToday ? "true" : undefined}
-                    ref={isToday && i === 0 ? scrollRef : null}
-                    className={`relative border rounded-xl shadow bg-white p-0 flex items-stretch transition hover:shadow-lg min-h-[110px]`}
-                    style={{ '--appt-color': color } as React.CSSProperties}
-                  >
-                    {/* Color bar */}
+
+                  return (
                     <div
-                      className="w-2 rounded-l-xl h-full absolute left-0 top-0 bottom-0 transition-colors"
-                      style={{ backgroundColor: 'var(--appt-color)' }}
-                    />
-                    {/* Main content */}
-                    <div className="pl-6 pr-2 py-4 flex-1 flex flex-col justify-center min-h-[110px]">
-                      <div className="flex items-center gap-2 mb-1">
-                        <div className="text-base font-semibold text-gray-700">
-                          <span
-                            className={
-                              isDone ? "line-through text-gray-400" : undefined
-                            }
-                          >
-                            {appt.title}
+                      key={appt.id}
+                      data-today={isToday ? "true" : undefined}
+                      ref={isToday && i === 0 ? scrollRef : null}
+                      className={`relative border rounded-xl shadow bg-white p-0 flex items-stretch transition hover:shadow-lg min-h-[110px]`}
+                      style={{ '--appt-color': color } as React.CSSProperties}
+                    >
+                      {/* Color bar */}
+                      <div
+                        className="w-2 rounded-l-xl h-full absolute left-0 top-0 bottom-0 transition-colors"
+                        style={{ backgroundColor: 'var(--appt-color)' }}
+                      />
+                      {/* Main content */}
+                      <div className="pl-6 pr-2 py-4 flex-1 flex flex-col justify-center min-h-[110px]">
+                        <div className="flex items-center gap-2 mb-1">
+                          <div className="text-base font-semibold text-gray-700">
+                            <span
+                              className={
+                                isDone ? "line-through text-gray-400" : undefined
+                              }
+                            >
+                              {appt.title}
+                            </span>
+                          </div>
+                          {getDateTag(start)}
+                        </div>
+                        {/* Date and Time with icon */}
+                        <div className="flex items-center gap-3 text-sm text-gray-500 mb-1">
+                          <span className="flex items-center gap-1">
+                            <svg
+                              width="16"
+                              height="16"
+                              fill="none"
+                              viewBox="0 0 24 24"
+                              className="inline-block align-middle text-gray-400"
+                            >
+                              <path
+                                d="M8 7V3M16 7V3M3 11H21M5 19H19C20.1046 19 21 18.1046 21 17V7C21 5.89543 20.1046 5 19 5H5C3.89543 5 3 5.89543 3 7V17C3 18.1046 3.89543 19 5 19Z"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                              />
+                            </svg>
+                            <span
+                              className={
+                                isDone ? "line-through text-gray-400" : undefined
+                              }
+                            >
+                              {format(start, "dd.MM.yyyy")}
+                            </span>
+                          </span>
+                          <span className="flex items-center gap-1">
+                            <svg
+                              width="16"
+                              height="16"
+                              fill="none"
+                              viewBox="0 0 24 24"
+                              className="inline-block align-middle text-gray-400"
+                            >
+                              <path
+                                d="M12 6V12L16 14"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                              />
+                              <circle
+                                cx="12"
+                                cy="12"
+                                r="10"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                              />
+                            </svg>
+                            <span
+                              className={
+                                isDone ? "line-through text-gray-400" : undefined
+                              }
+                            >
+                              {format(start, "HH:mm")} – {format(new Date(appt.end), "HH:mm")}
+                            </span>
                           </span>
                         </div>
-                        {getDateTag(start)}
-                      </div>
-                      {/* Date and Time with icon */}
-                      <div className="flex items-center gap-3 text-sm text-gray-500 mb-1">
-                        <span className="flex items-center gap-1">
-                          <svg
-                            width="16"
-                            height="16"
-                            fill="none"
-                            viewBox="0 0 24 24"
-                            className="inline-block align-middle text-gray-400"
-                          >
-                            <path
-                              d="M8 7V3M16 7V3M3 11H21M5 19H19C20.1046 19 21 18.1046 21 17V7C21 5.89543 20.1046 5 19 5H5C3.89543 5 3 5.89543 3 7V17C3 18.1046 3.89543 19 5 19Z"
-                              stroke="currentColor"
-                              strokeWidth="2"
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                            />
-                          </svg>
-                          <span
-                            className={
-                              isDone ? "line-through text-gray-400" : undefined
-                            }
-                          >
-                            {format(start, "dd.MM.yyyy")}
-                          </span>
-                        </span>
-                        <span className="flex items-center gap-1">
-                          <svg
-                            width="16"
-                            height="16"
-                            fill="none"
-                            viewBox="0 0 24 24"
-                            className="inline-block align-middle text-gray-400"
-                          >
-                            <path
-                              d="M12 6V12L16 14"
-                              stroke="currentColor"
-                              strokeWidth="2"
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                            />
-                            <circle
-                              cx="12"
-                              cy="12"
-                              r="10"
-                              stroke="currentColor"
-                              strokeWidth="2"
-                            />
-                          </svg>
-                          <span
-                            className={
-                              isDone ? "line-through text-gray-400" : undefined
-                            }
-                          >
-                            {format(start, "HH:mm")} – {format(new Date(appt.end), "HH:mm")}
-                          </span>
-                        </span>
-                      </div>
 
-                      {/* Notes with icon */}
-                      {appt.notes && (
-                        <div className="flex items-center gap-2 text-sm mb-1">
-                          <FiFileText
-                            className={`w-4 h-4 ${
-                              isDone ? "text-gray-300" : "text-gray-400"
-                            }`}
-                          />
-                          <span
-                            className={
-                              isDone
-                                ? "line-through text-gray-400"
-                                : "text-gray-600"
-                            }
-                          >
-                            {appt.notes}
+                        {/* Notes with icon */}
+                        {appt.notes && (
+                          <div className="flex items-center gap-2 text-sm mb-1">
+                            <FiFileText
+                              className={`w-4 h-4 ${isDone ? "text-gray-300" : "text-gray-400"
+                                }`}
+                            />
+                            <span
+                              className={
+                                isDone
+                                  ? "line-through text-gray-400"
+                                  : "text-gray-600"
+                              }
+                            >
+                              {appt.notes}
+                            </span>
+                          </div>
+                        )}
+
+                        {/* Category with icon */}
+                        {appt.category_data && (
+                          <div className="flex items-center gap-2 text-xs text-gray-500 mb-1">
+                            {categoryIcon}
+                            <span>{appt.category_data.label}</span>
+                          </div>
+                        )}
+
+                        {/* Client name with icon */}
+                        <div className="flex items-center gap-2 text-xs text-gray-400 italic mt-1">
+                          <FiUser className="w-4 h-4" />
+                          <span>Klient:</span>
+                          <span className="not-italic text-gray-700">
+                            {(() => {
+                              try {
+                                if (!appt.patient) return "--";
+
+                                // If patient is an object with firstname/lastname
+                                if (typeof appt.patient === "object" &&
+                                  "firstname" in appt.patient &&
+                                  "lastname" in appt.patient) {
+                                  return `${(appt.patient as Patient).firstname} ${(appt.patient as Patient).lastname}`;
+                                }
+
+                                // If patient is a string ID and patients are loaded
+                                if (typeof appt.patient === "string" && patients.length > 0) {
+                                  const p = patients.find((x) => x.id === appt.patient);
+                                  return p && p.firstname && p.lastname ? `${p.firstname} ${p.lastname}` : "--";
+                                }
+
+                                // Fallback
+                                return "--";
+                              } catch (error) {
+                                console.error('Error in client name lookup:', error);
+                                return "--";
+                              }
+                            })()}
                           </span>
                         </div>
-                      )}
 
-                      {/* Category with icon */}
-                      {appt.category_data && (
-                        <div className="flex items-center gap-2 text-xs text-gray-500 mb-1">
-                          {categoryIcon}
-                          <span>{appt.category_data.label}</span>
+                        {/* Location with icon */}
+                        <div className="flex items-center gap-2 text-xs text-gray-400 italic mt-1">
+                          <FiMapPin className="w-4 h-4" />
+                          <span>Ort:</span>
+                          <span className="not-italic text-gray-700">
+                            {appt.location || "--"}
+                          </span>
                         </div>
-                      )}
 
-                      {/* Client name with icon */}
-                      <div className="flex items-center gap-2 text-xs text-gray-400 italic mt-1">
-                        <FiUser className="w-4 h-4" />
-                        <span>Klient:</span>
-                        <span className="not-italic text-gray-700">
-                          {appt.patient &&
-                          typeof appt.patient === "object" &&
-                          "firstname" in appt.patient &&
-                          "lastname" in appt.patient
-                            ? `${(appt.patient as Patient).firstname} ${(appt.patient as Patient).lastname}`
-                            : appt.patient && patients.length > 0
-                            ? (() => {
-                                const p = patients.find(
-                                  (x) => x.id === appt.patient
+                        {/* Attachments with icon */}
+                        {appt.attachements && appt.attachements.length > 0 && (
+                          <div className="flex items-center gap-2 text-xs text-gray-400 mt-1">
+                            <FiPaperclip className="w-4 h-4" />
+                            <span>Anhänge:</span>
+                            {appt.attachements.map((file, idx) => {
+                              if (typeof window !== "undefined") {
+                                console.log("Supabase bucket:", "attachments");
+                                console.log("Attachment file:", file);
+                              }
+                              const { data } = supabase.storage
+                                .from("attachments")
+                                .getPublicUrl(file);
+                              if (typeof window !== "undefined") {
+                                console.log(
+                                  "Generated publicUrl:",
+                                  data?.publicUrl
                                 );
-                                return p
-                                  ? `${p.firstname} ${p.lastname}`
-                                  : "--";
-                              })()
-                            : "--"}
-                        </span>
-                      </div>
-
-                      {/* Location with icon */}
-                      <div className="flex items-center gap-2 text-xs text-gray-400 italic mt-1">
-                        <FiMapPin className="w-4 h-4" />
-                        <span>Ort:</span>
-                        <span className="not-italic text-gray-700">
-                          {appt.location || "--"}
-                        </span>
-                      </div>
-
-                      {/* Attachments with icon */}
-                      {appt.attachements && appt.attachements.length > 0 && (
-                        <div className="flex items-center gap-2 text-xs text-gray-400 mt-1">
-                          <FiPaperclip className="w-4 h-4" />
-                          <span>Anhänge:</span>
-                          {appt.attachements.map((file, idx) => {
-                            if (typeof window !== "undefined") {
-                              console.log("Supabase bucket:", "attachments");
-                              console.log("Attachment file:", file);
-                            }
-                            const { data } = supabase.storage
-                              .from("attachments")
-                              .getPublicUrl(file);
-                            if (typeof window !== "undefined") {
-                              console.log(
-                                "Generated publicUrl:",
-                                data?.publicUrl
+                              }
+                              const fileName = file.split("/").pop() || file;
+                              return data && data.publicUrl ? (
+                                <a
+                                  key={idx}
+                                  href={data.publicUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="not-italic text-blue-700 underline"
+                                >
+                                  {fileName}
+                                </a>
+                              ) : (
+                                <span key={idx} className="text-red-600">
+                                  [Fehler: Datei nicht gefunden]
+                                </span>
                               );
-                            }
-                            const fileName = file.split("/").pop() || file;
-                            return data && data.publicUrl ? (
-                              <a
-                                key={idx}
-                                href={data.publicUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="not-italic text-blue-700 underline"
-                              >
-                                {fileName}
-                              </a>
-                            ) : (
-                              <span key={idx} className="text-red-600">
-                                [Fehler: Datei nicht gefunden]
-                              </span>
-                            );
-                          })}
+                            })}
+                          </div>
+                        )}
+
+                        {/* Status with icon */}
+                        <div className="flex items-center gap-2 text-xs text-gray-400 mt-1">
+                          <FiFlag className="w-4 h-4" />
+                          <span>Status:</span>
+                          <span className="not-italic text-gray-700">
+                            {appt.status || "pending"}
+                          </span>
                         </div>
-                      )}
 
-                      {/* Status with icon */}
-                      <div className="flex items-center gap-2 text-xs text-gray-400 mt-1">
-                        <FiFlag className="w-4 h-4" />
-                        <span>Status:</span>
-                        <span className="not-italic text-gray-700">
-                          {appt.status || "pending"}
-                        </span>
-                      </div>
+                        {/* Refer to: patient name from appointment.patient field */}
+                        {appt.patient && (
+                          <div className="flex items-center gap-2 text-xs text-gray-400 mb-1">
+                            <FiUsers /> Refer to:
+                            {(() => {
+                              try {
+                                // Debug: Log the patient data
+                                console.log('DEBUG - Patient data:', {
+                                  patient: appt.patient,
+                                  patientType: typeof appt.patient,
+                                  isObject: typeof appt.patient === 'object',
+                                  hasFirstname: appt.patient && typeof appt.patient === 'object' && 'firstname' in appt.patient,
+                                  hasLastname: appt.patient && typeof appt.patient === 'object' && 'lastname' in appt.patient
+                                });
 
-                      {/* Refer to: patient/relative names */}
-                    {dedupedAssignees.length > 0 && (
-                      <div className="flex items-center gap-2 text-xs text-gray-400 mb-1">
-                        <FiUsers /> Refer to:
-                        {dedupedAssignees
-                          .map((ass, idx) => {
-                            let patientName = "";
-                            if (ass.user_type === "patients") {
-                              const p = patients.find((x) => x.id === ass.user);
-                              if (p) patientName = `Patient: ${p.firstname} ${p.lastname}`;
-                            } else if (ass.user_type === "relatives") {
-                              const r = relatives.find((x) => x.id === ass.user);
-                              if (r) patientName = `Angehörige: ${r.firstname} ${r.lastname}`;
-                            }
-                            return patientName ? (
-                              <span key={ass.id || idx} className="not-italic text-purple-700">
-                                {patientName}
-                              </span>
-                            ) : null;
-                          })
-                          .filter(Boolean)}
-                      </div>
-                    )}
-                    {/* Assigned by: invited_email, user id, or owner */}
-                    {dedupedAssignees.length > 0 && (
-                      <div className="flex items-center gap-2 text-xs text-gray-400 mb-1">
-                        <FiUsers /> Assigned by:
-                        {dedupedAssignees
-                          .map((ass, idx) => {
-                            let patientName = "";
-                            if (ass.user_type === "patients") {
-                              const p = patients.find((x) => x.id === ass.user);
-                              if (p) patientName = `Patient: ${p.firstname} ${p.lastname}`;
-                            } else if (ass.user_type === "relatives") {
-                              const r = relatives.find((x) => x.id === ass.user);
-                              if (r) patientName = `Angehörige: ${r.firstname} ${r.lastname}`;
-                            }
-                            // Only show if not patient/relative
-                            if (!patientName) {
-                              if (ass.invited_email) {
+                                // If patient is already an object with firstname/lastname
+                                if (appt.patient &&
+                                  typeof appt.patient === 'object' &&
+                                  'firstname' in appt.patient &&
+                                  'lastname' in appt.patient) {
+                                  const patientObj = appt.patient as Patient;
+                                  return (
+                                    <span className="not-italic text-purple-700">
+                                      Patient: {patientObj.firstname} {patientObj.lastname}
+                                    </span>
+                                  );
+                                }
+
+                                // If patient is a string ID and patients are loaded
+                                if (typeof appt.patient === 'string' && patients.length > 0) {
+                                  const patient = patients.find((p) => p.id === appt.patient);
+                                  if (patient && patient.firstname && patient.lastname) {
+                                    return (
+                                      <span className="not-italic text-purple-700">
+                                        Patient: {patient.firstname} {patient.lastname}
+                                      </span>
+                                    );
+                                  }
+                                }
+
+                                // Fallback
                                 return (
-                                  <span key={ass.id || idx} className="not-italic text-blue-700">
-                                    {ass.invited_email}
+                                  <span className="not-italic text-red-700">
+                                    Patient data not available
                                   </span>
                                 );
-                              } else if (ass.user === appt.user_id) {
-                                // Owner
+                              } catch (error) {
+                                console.error('Error in patient lookup:', error);
                                 return (
-                                  <span key={ass.id || idx} className="not-italic text-green-700">
-                                    you ({user?.email || "owner"})
-                                  </span>
-                                );
-                              } else if (ass.user) {
-                                return (
-                                  <span key={ass.id || idx} className="not-italic text-gray-700">
-                                    {ass.user}
+                                  <span className="not-italic text-red-700">
+                                    Error loading patient
                                   </span>
                                 );
                               }
-                            }
-                            return null;
-                          })
-                          .filter(Boolean)}
-                        {/* If no assignee matched owner, show owner explicitly */}
-                        {dedupedAssignees.every(ass => ass.user !== appt.user_id) && appt.user_id && (
-                          <span key={appt.user_id} className="not-italic text-green-700">
-                            you ({user?.email || "owner"})
-                          </span>
+                            })()}
+                          </div>
+                        )}
+
+                        {/* Assigned by: invited_email, user id, or owner */}
+                        {dedupedAssignees.length > 0 && (
+                          <div className="flex items-center gap-2 text-xs text-gray-400 mb-1">
+                            <FiUsers /> Assigned by:
+                            {appt.user_id === user?.id ? (
+                              // Owner view
+                              <span className="not-italic text-green-700">
+                                you ({user?.email || "owner"})
+                              </span>
+                            ) : (
+                              // Invitee view: show owner's email
+                              <span className="not-italic text-blue-700">
+                                {(() => {
+                                  // Find owner's email from ownerUsers
+                                  const owner = ownerUsers.find(u => u.id === appt.user_id);
+                                  return owner?.email || appt.user_id;
+                                })()}
+                              </span>
+                            )}
+                          </div>
+                        )}
+
+
+
+
+                        {appt.activities && appt.activities.length > 0 && (
+                          <div className="flex flex-col gap-1 text-xs text-gray-400 mb-1">
+                            <span>Aktivitäten:</span>
+                            {appt.activities
+                              .map((act, idx) => (
+                                <span
+                                  key={idx}
+                                  className="not-italic text-pink-700"
+                                >
+                                  {act.type}: {act.content}
+                                </span>
+                              ))}
+                          </div>
                         )}
                       </div>
-                    )}
-                      
-                      {appt.activities && appt.activities.length > 0 && (
-                      <div className="flex flex-col gap-1 text-xs text-gray-400 mb-1">
-                        <span>Aktivitäten:</span>
-                        {appt.activities
-                          .map((act, idx) => (
-                            <span
-                              key={idx}
-                              className="not-italic text-pink-700"
-                            >
-                              {act.type}: {act.content}
-                            </span>
-                          ))}
-                      </div>
-                    )}
-                    </div>
 
-                    {/* Actions column */}
-                    <div className="flex flex-col items-center gap-3 min-w-[56px] py-4 px-2 justify-center">
-                      <label className="flex flex-col items-center gap-1">
-                        <input
-                          type="checkbox"
-                          className="mb-1 accent-green-600 w-5 h-5 cursor-pointer hover:ring-2 hover:ring-green-300"
-                          checked={isDone}
-                          onChange={() =>
-                            toggleStatus(appt.id, isDone ? "pending" : "done")
+                      {/* Actions column */}
+                      <div className="flex flex-col items-center gap-3 min-w-[56px] py-4 px-2 justify-center">
+                        {/* Status checkbox - only show if user is owner, full, or write permission */}
+                        {(() => {
+                          const perm = getUserPermission(appt);
+                          // Only owner, full, or write can see status checkbox
+                          if (perm === "owner" || perm === "full" || perm === "write") {
+                            return (
+                              <label className="flex flex-col items-center gap-1">
+                                <input
+                                  type="checkbox"
+                                  className="mb-1 accent-green-600 w-5 h-5 cursor-pointer hover:ring-2 hover:ring-green-300"
+                                  checked={isDone}
+                                  onChange={() =>
+                                    toggleStatus(appt.id, isDone ? "pending" : "done")
+                                  }
+                                />
+                                <span className="text-xs text-gray-500 select-none">
+                                  {isDone ? "Erledigt" : "Offen"}
+                                </span>
+                              </label>
+                            );
                           }
-                          disabled={(() => {
-                            const perm = getUserPermission(appt);
-                            // Only owner, full, or write can toggle status
-                            return perm !== "owner" && perm !== "full" && perm !== "write";
-                          })()}
-                        />
-                        <span className="text-xs text-gray-500 select-none">
-                          {isDone ? "Erledigt" : "Offen"}
-                        </span>
-                      </label>
-                      {/* Only show edit/delete if user is owner or has 'full' permission */}
-                      {(() => {
-                        const perm = getUserPermission(appt);
-                        // Only owner or full can edit/delete
-                        if (perm === "owner" || perm === "full") {
-                          return <>
-                            <Button
-                              size="icon"
-                              variant="outline"
-                              className="rounded-full border-gray-300 cursor-pointer hover:bg-gray-100"
-                              onClick={() => handleEdit(appt)}
-                              aria-label="Bearbeiten"
-                            >
-                              <FiEdit2 className="w-4 h-4" />
-                            </Button>
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              className="rounded-full cursor-pointer hover:bg-red-100"
-                              onClick={() => deleteAppt(appt.id)}
-                              aria-label="Löschen"
-                            >
-                              <FiTrash2 className="w-4 h-4 text-red-500" />
-                            </Button>
-                          </>;
-                        }
-                        return null;
-                      })()}
+                          return null;
+                        })()}
+
+                        {/* Only show edit/delete if user is owner or has 'full' permission */}
+                        {(() => {
+                          const perm = getUserPermission(appt);
+                          // Only owner or full can edit/delete
+                          if (perm === "owner" || perm === "full") {
+                            return <>
+                              <Button
+                                size="icon"
+                                variant="outline"
+                                className="rounded-full border-gray-300 cursor-pointer hover:bg-gray-100"
+                                onClick={() => handleEdit(appt)}
+                                aria-label="Bearbeiten"
+                              >
+                                <FiEdit2 className="w-4 h-4" />
+                              </Button>
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                className="rounded-full cursor-pointer hover:bg-red-100"
+                                onClick={() => deleteAppt(appt.id)}
+                                aria-label="Löschen"
+                              >
+                                <FiTrash2 className="w-4 h-4 text-red-500" />
+                              </Button>
+                            </>;
+                          }
+                          return null;
+                        })()}
+                      </div>
                     </div>
-                  </div>
-                );
-                // --- End: Restored full-featured appointment card ---
+                  );
+                  // --- End: Restored full-featured appointment card ---
                 })}
               </div>
             </div>

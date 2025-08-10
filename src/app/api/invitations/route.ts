@@ -19,7 +19,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
     const body = (await req.json()) as InvitationRequest;
-    const { type, email, resourceId, permission } = body;
+  const { type, email, resourceId, permission, invitedUserId } = body;
     if (!type || !email || !resourceId || !permission) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }
@@ -38,6 +38,7 @@ export async function POST(req: NextRequest) {
     if (type === "appointment") {
       const { data, error } = await supabaseAdmin.from("appointment_assignee").insert({
         appointment: resourceId,
+        user: invitedUserId || null,
         invited_email: email,
         status: "pending",
         invitation_token: token,
@@ -52,6 +53,7 @@ export async function POST(req: NextRequest) {
     } else if (type === "dashboard") {
       const { data, error } = await supabaseAdmin.from("dashboard_access").insert({
         owner_user_id: resourceId,
+        invited_user_id: invitedUserId || null,
         invited_email: email,
         status: "pending",
         invitation_token: token,

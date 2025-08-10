@@ -24,7 +24,7 @@ type AppointmentWithCategory = Appointment & {
 };
 
 export default function WeekView() {
-const [appointments, setAppointments] = useState<AppointmentWithCategory[]>([]);
+  const [appointments, setAppointments] = useState<AppointmentWithCategory[]>([]);
   const supabase = createClientComponentClient();
   const { currentDate } = useDateContext();
   const weekStart = startOfWeek(currentDate, { weekStartsOn: 1 });
@@ -40,6 +40,7 @@ const [appointments, setAppointments] = useState<AppointmentWithCategory[]>([]);
   const [relatives, setRelatives] = useState<Relative[]>([]);
   const [assignees, setAssignees] = useState<AppointmentAssignee[]>([]);
   const [activities, setActivities] = useState<Activity[]>([]);
+  const [ownerUsers, setOwnerUsers] = useState<{ id: string, email: string }[]>([]);
 
   const { randomBgColor } = useAppointmentColor();
 
@@ -98,12 +99,31 @@ const [appointments, setAppointments] = useState<AppointmentWithCategory[]>([]);
       type AppointmentWithAssignees = AppointmentWithCategory & { appointment_assignee?: AppointmentAssignee[] };
       const assignedAppointments: AppointmentWithAssignees[] = [...(assignedByUser || []), ...assignedByEmail]
         .filter((a) => typeof a.permission === "string" && ["read", "write", "full"].includes(a.permission))
-        .map((a) => {
+        .map((a: any) => {
           const apptData = Array.isArray(a.appointment_data)
             ? a.appointment_data[0]
             : a.appointment_data;
           return { ...apptData, appointment_assignee: [a] };
         });
+
+      // Collect all unique user IDs from appointments to get owner emails
+      const allUserIds = new Set<string>();
+      if (owned) {
+        owned.forEach(appt => {
+          if (appt.user_id) allUserIds.add(appt.user_id);
+        });
+      }
+      assignedAppointments.forEach(appt => {
+        if (appt.user_id) allUserIds.add(appt.user_id);
+      });
+
+      // Fetch user data for all owners
+      const { data: allOwnerUsers } = await supabase
+        .from("users")
+        .select("id, email")
+        .in("id", Array.from(allUserIds));
+
+      setOwnerUsers(allOwnerUsers || []);
       // Merge and deduplicate, always include all assignees for each appointment
       const allAppointments: AppointmentWithAssignees[] = [...(owned || []), ...assignedAppointments].map((appt) => ({ ...appt }));
       const deduped: AppointmentWithAssignees[] = allAppointments.reduce((acc: AppointmentWithAssignees[], curr: AppointmentWithAssignees) => {
@@ -326,7 +346,7 @@ const [appointments, setAppointments] = useState<AppointmentWithCategory[]>([]);
               const today = new Date();
               const weekStartDate = startOfWeek(today, { weekStartsOn: 1 });
               const weekEndDate = addDays(weekStartDate, 6);
-              return weekStart.getTime() === weekStartDate.setHours(0,0,0,0);
+              return weekStart.getTime() === weekStartDate.setHours(0, 0, 0, 0);
             })();
             return (
               <div
@@ -365,15 +385,15 @@ const [appointments, setAppointments] = useState<AppointmentWithCategory[]>([]);
                   left: 0,
                   zIndex: 15,
                   background: "#f9fafb",
-                  }}
-                  >{`${hour}:00`}
+                }}
+              >{`${hour}:00`}
               </div>
               {Array.from({ length: 7 }).map((_, i) => {
                 const day = addDays(weekStart, i);
                 // Only highlight current day column if today is in this week
                 const today = new Date();
                 const weekStartDate = startOfWeek(today, { weekStartsOn: 1 });
-                const isCurrentWeek = weekStart.getTime() === weekStartDate.setHours(0,0,0,0);
+                const isCurrentWeek = weekStart.getTime() === weekStartDate.setHours(0, 0, 0, 0);
                 const isTodayCol = day.toDateString() === today.toDateString() && isCurrentWeek;
                 const slotStart = setMinutes(setHours(day, hour), 0);
                 const slotEnd = setMinutes(setHours(day, hour + 1), 0);
@@ -400,51 +420,51 @@ const [appointments, setAppointments] = useState<AppointmentWithCategory[]>([]);
                       background: isTodayCol ? "#e6f9ed" : undefined,
                     }}
                   >
-                    
+
                     {/* Inject your code here: */}
                     {matches.map((a) => {
                       const color = randomBgColor(a.id);
-  const start = new Date(a.start);
-  const end = new Date(a.end);
-  const hourStart = start.getHours() + start.getMinutes() / 60;
-  const hourEnd = end.getHours() + end.getMinutes() / 60;
-  // Only render in the slot where the appointment starts
-  if (start.getHours() !== hour || start.toDateString() !== day.toDateString()) return null;
-  const slotTop = (hourStart - hour) * hourHeight;
-  const slotHeight = Math.max(30, (hourEnd - hourStart) * hourHeight); // 30px min height
-  return (
-    <div
-      key={a.id}
-      style={{
-        position: "absolute",
-        left: 4,
-        right: 4,
-        top: slotTop,
-        height: slotHeight,
-        minHeight: 30,
-        zIndex: 2,
-        // Add border and background for the card
-      }}
-    >
-      <AppointmentHoverCard
-        appointment={a}
-        patients={patients}
-        relatives={relatives}
-        assignees={assignees}
-        activities={activities}
-        userEmail={userEmail}
-        userId={userId}
-        getDateTag={getDateTag}
-        onEdit={setEditAppt}
-        onDelete={deleteAppt}
-        onToggleStatus={toggleStatus}
-        supabase={supabase}
-        showDetails={true}
-        
-      />
-    </div>
-  );
-})}
+                      const start = new Date(a.start);
+                      const end = new Date(a.end);
+                      const hourStart = start.getHours() + start.getMinutes() / 60;
+                      const hourEnd = end.getHours() + end.getMinutes() / 60;
+                      // Only render in the slot where the appointment starts
+                      if (start.getHours() !== hour || start.toDateString() !== day.toDateString()) return null;
+                      const slotTop = (hourStart - hour) * hourHeight;
+                      const slotHeight = Math.max(30, (hourEnd - hourStart) * hourHeight); // 30px min height
+                      return (
+                        <div
+                          key={a.id}
+                          style={{
+                            position: "absolute",
+                            left: 4,
+                            right: 4,
+                            top: slotTop,
+                            height: slotHeight,
+                            minHeight: 30,
+                            zIndex: 2,
+                            // Add border and background for the card
+                          }}
+                        >
+                          <AppointmentHoverCard
+                            appointment={a}
+                            patients={patients}
+                            relatives={relatives}
+                            assignees={assignees.filter((ass) => ass.appointment === a.id)}
+                            activities={activities}
+                            userEmail={userEmail}
+                            userId={userId}
+                            ownerUsers={ownerUsers}
+                            getDateTag={getDateTag}
+                            onEdit={setEditAppt}
+                            onDelete={deleteAppt}
+                            onToggleStatus={toggleStatus}
+                            supabase={supabase}
+                            showDetails={true}
+                          />
+                        </div>
+                      );
+                    })}
                   </div>
                 );
               })}

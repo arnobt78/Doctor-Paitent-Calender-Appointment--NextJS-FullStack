@@ -6,4 +6,5 @@ export interface InvitationRequest {
   email: string;
   resourceId: string; // appointmentId or ownerUserId
   permission: InvitationPermission;
+  invitedUserId?: string;
 }

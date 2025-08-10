@@ -42,6 +42,7 @@ import { useAppointmentColor } from "@/context/AppointmentColorContext";
 
 type AppointmentWithCategory = Appointment & {
   category_data?: Category;
+  patient_data?: Patient;
 };
 
 export default function MonthView() {
@@ -55,13 +56,14 @@ export default function MonthView() {
   const [relatives, setRelatives] = useState<Relative[]>([]);
   const [assignees, setAssignees] = useState<AppointmentAssignee[]>([]);
   const [activities, setActivities] = useState<Activity[]>([]);
+  const [ownerUsers, setOwnerUsers] = useState<{ id: string, email: string }[]>([]);
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   // Store current userId for permission checks
   const [userId, setUserId] = useState<string | null>(null);
   const [userEmail, setUserEmail] = useState<string | null>(null);
 
   const { randomBgColor } = useAppointmentColor();
-  
+
   const buildCalendar = useCallback(
     (list: AppointmentWithCategory[]) => {
       const start = startOfWeek(startOfMonth(currentDate), {
@@ -104,7 +106,7 @@ export default function MonthView() {
       // Fetch owned appointments
       const { data: owned } = await supabase
         .from("appointments")
-        .select("*, category:category(*), appointment_assignee:appointment_assignee(*)")
+        .select("*, category:category(*), patient:patients(*), appointment_assignee:appointment_assignee(*)")
         .eq("user_id", uid);
       // Fetch assigned appointments by user
       const { data: assignedByUser } = await supabase
@@ -153,6 +155,25 @@ export default function MonthView() {
         return acc;
       }, []);
       if (deduped) buildCalendar(deduped as AppointmentWithCategory[]);
+
+      // Collect all unique user IDs from appointments to get owner emails
+      const allUserIds = new Set<string>();
+      if (owned) {
+        owned.forEach(appt => {
+          if (appt.user_id) allUserIds.add(appt.user_id);
+        });
+      }
+      assignedAppointments.forEach(appt => {
+        if (appt.user_id) allUserIds.add(appt.user_id);
+      });
+
+      // Fetch user data for all owners
+      const { data: allOwnerUsers } = await supabase
+        .from("users")
+        .select("id, email")
+        .in("id", Array.from(allUserIds));
+
+      setOwnerUsers(allOwnerUsers || []);
     })();
   }, [currentDate, buildCalendar, supabase, userId, userEmail]);
 
@@ -307,24 +328,30 @@ export default function MonthView() {
                   </span>
                 </div>
                 <div className="space-y-1">
-                  {appointments.map((a) => (
-                    <AppointmentHoverCard
-                      key={a.id}
-                      appointment={a}
-                      patients={patients}
-                      relatives={relatives}
-                      assignees={assignees}
-                      activities={activities}
-                      userEmail={userEmail}
-                      userId={userId}
-                      getDateTag={getDateTag}
-                      onEdit={setEditAppt}
-                      onDelete={deleteAppt}
-                      onToggleStatus={toggleStatus}
-                      supabase={supabase}
-                      showDetails={false} // Default to false, can be overridden
-                    />
-                  ))}
+                  {appointments.map((a) => {
+                    // Filter assignees for this specific appointment
+                    const appointmentAssignees = assignees.filter((ass) => ass.appointment === a.id);
+
+                    return (
+                      <AppointmentHoverCard
+                        key={a.id}
+                        appointment={a}
+                        patients={patients}
+                        relatives={relatives}
+                        assignees={appointmentAssignees}
+                        activities={activities}
+                        userEmail={userEmail}
+                        userId={userId}
+                        ownerUsers={ownerUsers}
+                        getDateTag={getDateTag}
+                        onEdit={setEditAppt}
+                        onDelete={deleteAppt}
+                        onToggleStatus={toggleStatus}
+                        supabase={supabase}
+                        showDetails={false} // Default to false, can be overridden
+                      />
+                    );
+                  })}
                 </div>
               </div>
             );
@@ -437,11 +464,11 @@ export default function MonthView() {
                       <span className="not-italic text-gray-700">
                         {a.patient && patients.length > 0
                           ? (() => {
-                              const p = patients.find(
-                                (x) => x.id === a.patient
-                              );
-                              return p ? `${p.firstname} ${p.lastname}` : "--";
-                            })()
+                            const p = patients.find(
+                              (x) => x.id === a.patient
+                            );
+                            return p ? `${p.firstname} ${p.lastname}` : "--";
+                          })()
                           : "--"}
                       </span>
                     </div>
@@ -488,77 +515,85 @@ export default function MonthView() {
                       </span>
                     </div>
 
-                    {/* Refer to: patient/relative names */}
-                    {dedupedAssignees.length > 0 && (
+                    {/* Refer to: patient name from appointment.patient field */}
+                    {a.patient && (
                       <div className="flex items-center gap-2 text-xs text-gray-400 mb-1">
                         <FiUsers /> Refer to:
-                        {dedupedAssignees
-                          .map((ass, idx) => {
-                            let patientName = "";
-                            if (ass.user_type === "patients") {
-                              const p = patients.find((x) => x.id === ass.user);
-                              if (p) patientName = `Patient: ${p.firstname} ${p.lastname}`;
-                            } else if (ass.user_type === "relatives") {
-                              const r = relatives.find((x) => x.id === ass.user);
-                              if (r) patientName = `Angehörige: ${r.firstname} ${r.lastname}`;
+                        {(() => {
+                          try {
+                            // Debug: Log the patient data
+                            console.log('DEBUG - MonthView Patient data:', {
+                              patient: a.patient,
+                              patientType: typeof a.patient,
+                              isObject: typeof a.patient === 'object',
+                              hasFirstname: a.patient && typeof a.patient === 'object' && 'firstname' in a.patient,
+                              hasLastname: a.patient && typeof a.patient === 'object' && 'lastname' in a.patient
+                            });
+
+                            // If patient is already an object with firstname/lastname
+                            if (a.patient &&
+                              typeof a.patient === 'object' &&
+                              'firstname' in a.patient &&
+                              'lastname' in a.patient) {
+                              const patientObj = a.patient as Patient;
+                              return (
+                                <span className="not-italic text-purple-700">
+                                  Patient: {patientObj.firstname} {patientObj.lastname}
+                                </span>
+                              );
                             }
-                            return patientName ? (
-                              <span key={ass.id || idx} className="not-italic text-purple-700">
-                                {patientName}
-                              </span>
-                            ) : null;
-                          })
-                          .filter(Boolean)}
-                      </div>
-                    )}
-                    {/* Assigned by: invited_email, user id, or owner */}
-                    {dedupedAssignees.length > 0 && (
-                      <div className="flex items-center gap-2 text-xs text-gray-400 mb-1">
-                        <FiUsers /> Assigned by:
-                        {dedupedAssignees
-                          .map((ass, idx) => {
-                            let patientName = "";
-                            if (ass.user_type === "patients") {
-                              const p = patients.find((x) => x.id === ass.user);
-                              if (p) patientName = `Patient: ${p.firstname} ${p.lastname}`;
-                            } else if (ass.user_type === "relatives") {
-                              const r = relatives.find((x) => x.id === ass.user);
-                              if (r) patientName = `Angehörige: ${r.firstname} ${r.lastname}`;
-                            }
-                            // Only show if not patient/relative
-                            if (!patientName) {
-                              if (ass.invited_email) {
+
+                            // If patient is a string ID and patients are loaded
+                            if (typeof a.patient === 'string' && patients.length > 0) {
+                              const patient = patients.find((p) => p.id === a.patient);
+                              if (patient && patient.firstname && patient.lastname) {
                                 return (
-                                  <span key={ass.id || idx} className="not-italic text-blue-700">
-                                    {ass.invited_email}
-                                  </span>
-                                );
-                              } else if (ass.user === a.user_id) {
-                                // Owner
-                                return (
-                                  <span key={ass.id || idx} className="not-italic text-green-700">
-                                    you ({userEmail || "owner"})
-                                  </span>
-                                );
-                              } else if (ass.user) {
-                                return (
-                                  <span key={ass.id || idx} className="not-italic text-gray-700">
-                                    {ass.user}
+                                  <span className="not-italic text-purple-700">
+                                    Patient: {patient.firstname} {patient.lastname}
                                   </span>
                                 );
                               }
                             }
-                            return null;
-                          })
-                          .filter(Boolean)}
-                        {/* If no assignee matched owner, show owner explicitly */}
-                        {dedupedAssignees.every(ass => ass.user !== a.user_id) && a.user_id && (
-                          <span key={a.user_id} className="not-italic text-green-700">
+
+                            // Fallback
+                            return (
+                              <span className="not-italic text-red-700">
+                                Patient data not available
+                              </span>
+                            );
+                          } catch (error) {
+                            console.error('Error in MonthView patient lookup:', error);
+                            return (
+                              <span className="not-italic text-red-700">
+                                Error loading patient
+                              </span>
+                            );
+                          }
+                        })()}
+                      </div>
+                    )}
+
+                    {dedupedAssignees.length > 0 && (
+                      <div className="flex items-center gap-2 text-xs text-gray-400 mb-1">
+                        <FiUsers /> Assigned by:
+                        {a.user_id === userId ? (
+                          // Owner view
+                          <span className="not-italic text-green-700">
                             you ({userEmail || "owner"})
+                          </span>
+                        ) : (
+                          // Invitee view: show owner's email
+                          <span className="not-italic text-blue-700">
+                            {(() => {
+                              // Find owner's email from ownerUsers
+                              const owner = ownerUsers.find(u => u.id === a.user_id);
+                              return owner?.email || a.user_id;
+                            })()}
                           </span>
                         )}
                       </div>
                     )}
+
                     {activities.length > 0 && (
                       <div className="flex flex-col gap-1 text-xs text-gray-400 mb-1">
                         <span>Aktivitäten:</span>
@@ -578,45 +613,145 @@ export default function MonthView() {
 
                   {/* Actions column */}
                   <div className="flex flex-col items-center gap-3 min-w-[56px] py-4 px-2 justify-center">
-                    <label className="flex flex-col items-center gap-1">
-                      <input
-                        type="checkbox"
-                        className="mb-1 accent-green-600 w-5 h-5 cursor-pointer"
-                        checked={isDone}
-                        onChange={() =>
-                          toggleStatus(a.id, isDone ? "pending" : "done")
-                        }
-                      />
-                      <span className="text-xs text-gray-500 select-none">
-                        {isDone ? "Erledigt" : "Offen"}
-                      </span>
-                    </label>
-                    <Button
-                      size="icon"
-                      variant="outline"
-                      className="rounded-full border-gray-300 cursor-pointer"
-                      onClick={() => setEditAppt(a)}
-                      aria-label="Bearbeiten"
-                    >
-                      <FiEdit2 className="w-4 h-4" />
-                    </Button>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="rounded-full cursor-pointer"
-                      onClick={() => deleteAppt(a.id)}
-                      aria-label="Löschen"
-                    >
-                      <FiTrash2 className="w-4 h-4 text-red-500" />
-                    </Button>
+                    {/* Status checkbox - only show if user is owner, full, or write permission */}
+                    {(() => {
+                      // Check if user is the owner
+                      const isOwner = a.user_id === userId;
+
+                      // Get user permission from assignees if not owner
+                      let userPermission: "full" | "write" | "read" | null = null;
+
+                      if (!isOwner && dedupedAssignees && dedupedAssignees.length > 0) {
+                        // Find the current user's assignment
+                        const userAssignment = dedupedAssignees.find(
+                          (ass) =>
+                            (ass.user === userId || ass.invited_email === userId) &&
+                            ass.appointment === a.id &&
+                            ass.status === "accepted"
+                        );
+                        userPermission = userAssignment?.permission || null;
+
+                        // Debug logging
+                        console.log('DEBUG - MonthView Sidebar Permission Check:', {
+                          appointmentId: a.id,
+                          userId: userId,
+                          userEmail: userEmail,
+                          dedupedAssignees: dedupedAssignees,
+                          userAssignment: userAssignment,
+                          userPermission: userPermission,
+                          isOwner: isOwner
+                        });
+                      }
+
+                      // Only owner, full, or write can toggle status
+                      if (isOwner || userPermission === "full" || userPermission === "write") {
+                        return (
+                          <label className="flex flex-col items-center gap-1">
+                            <input
+                              type="checkbox"
+                              className="mb-1 accent-green-600 w-5 h-5 cursor-pointer"
+                              checked={isDone}
+                              onChange={() =>
+                                toggleStatus(a.id, isDone ? "pending" : "done")
+                              }
+                            />
+                            <span className="text-xs text-gray-500 select-none">
+                              {isDone ? "Erledigt" : "Offen"}
+                            </span>
+                          </label>
+                        );
+                      }
+                      return null;
+                    })()}
+
+                    {/* Edit button - only show if user is owner or has full permission */}
+                    {(() => {
+                      // Check if user is the owner
+                      const isOwner = a.user_id === userId;
+
+                      // Get user permission from assignees if not owner
+                      let userPermission: "full" | "write" | "read" | null = null;
+
+                      if (!isOwner && dedupedAssignees && dedupedAssignees.length > 0) {
+                        // Find the current user's assignment
+                        const userAssignment = dedupedAssignees.find(
+                          (ass) =>
+                            (ass.user === userId || ass.invited_email === userId) &&
+                            ass.appointment === a.id &&
+                            ass.status === "accepted"
+                        );
+                        userPermission = userAssignment?.permission || null;
+
+                        // Debug logging for edit button
+                        console.log('DEBUG - MonthView Sidebar Edit Permission:', {
+                          appointmentId: a.id,
+                          userId: userId,
+                          userEmail: userEmail,
+                          userPermission: userPermission,
+                          canEdit: isOwner || userPermission === "full"
+                        });
+                      }
+
+                      // Only owner or full can edit
+                      if (isOwner || userPermission === "full") {
+                        return (
+                          <Button
+                            size="icon"
+                            variant="outline"
+                            className="rounded-full border-gray-300 cursor-pointer"
+                            onClick={() => setEditAppt(a)}
+                            aria-label="Bearbeiten"
+                          >
+                            <FiEdit2 className="w-4 h-4" />
+                          </Button>
+                        );
+                      }
+                      return null;
+                    })()}
+
+                    {/* Delete button - only show if user is owner or has full permission */}
+                    {(() => {
+                      // Check if user is the owner
+                      const isOwner = a.user_id === userId;
+
+                      // Get user permission from assignees if not owner
+                      let userPermission: "full" | "write" | "read" | null = null;
+
+                      if (!isOwner && dedupedAssignees && dedupedAssignees.length > 0) {
+                        // Find the current user's assignment
+                        const userAssignment = dedupedAssignees.find(
+                          (ass) =>
+                            (ass.user === userId || ass.invited_email === userId) &&
+                            ass.appointment === a.id &&
+                            ass.status === "accepted"
+                        );
+                        userPermission = userAssignment?.permission || null;
+                      }
+
+                      // Only owner or full can delete
+                      if (isOwner || userPermission === "full") {
+                        return (
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="rounded-full cursor-pointer"
+                            onClick={() => deleteAppt(a.id)}
+                            aria-label="Löschen"
+                          >
+                            <FiTrash2 className="w-4 h-4 text-red-500" />
+                          </Button>
+                        );
+                      }
+                      return null;
+                    })()}
                   </div>
                 </div>
               );
             })}
             {(calendarDays.find((d) => isSameDay(d.date, selectedDate))
               ?.appointments.length || 0) === 0 && (
-              <div className="text-gray-400 text-center">Keine Termine</div>
-            )}
+                <div className="text-gray-400 text-center">Keine Termine</div>
+              )}
           </div>
         </div>
       )}

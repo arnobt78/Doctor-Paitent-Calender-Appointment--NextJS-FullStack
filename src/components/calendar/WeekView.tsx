@@ -97,9 +97,19 @@ export default function WeekView() {
 
       // Merge assigned appointments
       type AppointmentWithAssignees = AppointmentWithCategory & { appointment_assignee?: AppointmentAssignee[] };
-      const assignedAppointments: AppointmentWithAssignees[] = [...(assignedByUser || []), ...assignedByEmail]
+      type AssigneeWithAppointmentData = AppointmentAssignee & { appointment_data: Appointment };
+
+      // Process assignedByUser to match the same structure as assignedByEmail
+      const processedAssignedByUser: AssigneeWithAppointmentData[] = (assignedByUser || []).map((a) => ({
+        ...a,
+        appointment_data: Array.isArray(a.appointment_data)
+          ? a.appointment_data[0]
+          : a.appointment_data,
+      }));
+
+      const assignedAppointments: AppointmentWithAssignees[] = [...processedAssignedByUser, ...assignedByEmail]
         .filter((a) => typeof a.permission === "string" && ["read", "write", "full"].includes(a.permission))
-        .map((a: any) => {
+        .map((a: AssigneeWithAppointmentData) => {
           const apptData = Array.isArray(a.appointment_data)
             ? a.appointment_data[0]
             : a.appointment_data;

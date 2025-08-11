@@ -1,5 +1,5 @@
 
-# Doctor Patient Calendar Appointment Management System – NextJS Web Application (Admin Control Panel Permission Dashboard)
+# Doctor Patient MultiView Calendar Appointment Management System – NextJS Web Application (Admin Control Panel Permission Dashboard)
 
 ![Screenshot 2025-06-26 at 17 07 38](https://github.com/user-attachments/assets/eedf5a4c-5cf9-4cea-bbd0-878660a9ab15)
 ![Screenshot 2025-06-26 at 17 09 03](https://github.com/user-attachments/assets/fe0ad75e-c74a-4a7a-8c47-30ef1cf577f2)

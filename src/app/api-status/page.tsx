@@ -14,6 +14,11 @@ function formatDate(date: Date) {
 
 const endpoints = [
   { name: "Appointments API", url: "/api/appointments" },
+  { name: "Appointment Permissions", url: "/api/appointments/[id]/permissions" },
+  { name: "Dashboard Permissions", url: "/api/dashboard/[id]/permissions" },
+  { name: "Invitations API", url: "/api/invitations" },
+  { name: "Users Search", url: "/api/users/search" },
+  { name: "Appointments Search", url: "/api/appointments/search" },
   { name: "OpenAPI Docs", url: "/api/openapi" },
 ];
 
@@ -106,13 +111,12 @@ export default function ApiStatusPage() {
         <div className="text-lg font-semibold">API Health:</div>
         <div className="flex items-center gap-2">
           <span
-            className={`inline-block w-3 h-3 rounded-full ${
-              apiStatus === "ok"
+            className={`inline-block w-3 h-3 rounded-full ${apiStatus === "ok"
                 ? "bg-green-500"
                 : apiStatus === "loading"
-                ? "bg-yellow-400"
-                : "bg-red-500"
-            }`}
+                  ? "bg-yellow-400"
+                  : "bg-red-500"
+              }`}
           ></span>
           <span className="text-gray-700">{apiStatus === "loading" ? "Checking..." : apiMessage}</span>
         </div>

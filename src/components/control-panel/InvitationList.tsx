@@ -1,7 +1,11 @@
 "use client";
 import React, { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import type { AppointmentAssignee } from "@/types/types";
+import type { AppointmentAssignee as BaseAppointmentAssignee } from "@/types/types";
+
+type AppointmentAssignee = BaseAppointmentAssignee & {
+  appointment_title?: string;
+};
 
 
 // Dashboard invitation type (minimal, based on API response)
@@ -39,15 +43,10 @@ export default function InvitationList({ type }: { type: "appointment" | "dashbo
   useEffect(() => {
     async function fetchInvitations() {
       setLoading(true);
-      // In a real app, get user info from auth/session
-      const res = await fetch("/api/invitations", {
-        headers: {
-          // Replace with real user info in production
-          "x-user-email": window.localStorage.getItem("userEmail") || "",
-          "x-user-id": window.localStorage.getItem("userId") || "",
-        },
-      });
+      const res = await fetch("/api/invitations");
       const data = await res.json();
+      console.log("API /api/invitations response:", data);
+      // Use all invitations from API directly (already filtered for current user)
       setInvitations(data[type + "Invitations"] || []);
       setLoading(false);
     }
@@ -55,7 +54,7 @@ export default function InvitationList({ type }: { type: "appointment" | "dashbo
   }, [type]);
 
   if (loading) return <div>Loading invitations...</div>;
-  if (!invitations.length) return <div className="text-gray-500">No invitations found.</div>;
+  if (!invitations.length) return <div className="mt-4 text-gray-500">No invitations found.</div>;
 
   return (
     <div className="mt-6">
@@ -67,7 +66,8 @@ export default function InvitationList({ type }: { type: "appointment" | "dashbo
           let invitationToken: string | undefined = undefined;
           if (isAppointmentAssignee(inv)) {
             key = inv.id;
-            displayValue = inv.appointment;
+            // Show appointment title and UUID
+            displayValue = `${inv.appointment_title || "Untitled"} (${inv.appointment})`;
             invitationToken = undefined;
           } else if (isDashboardInvitation(inv)) {
             key = inv.id || inv.invitation_token;
@@ -86,6 +86,48 @@ export default function InvitationList({ type }: { type: "appointment" | "dashbo
               )}
               {inv.status === "pending" && !invitationToken && isAppointmentAssignee(inv) && (
                 <Button size="sm" onClick={() => window.open(`/accept-invitation?token=${inv.id}`, "_blank")}>Accept</Button>
+              )}
+              {/* Discard Invitation button for appointment invitations (sender or receiver) */}
+              {type === "appointment" && key && (
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  onClick={async () => {
+                    if (!key) return;
+                    const res = await fetch(`/api/appointments/${key}/permissions`, {
+                      method: "DELETE",
+                    });
+                    if (res.ok) {
+                      setInvitations((prev) => prev.filter((i) => (isAppointmentAssignee(i) ? i.id !== key : true)));
+                    } else {
+                      const errorData = await res.json();
+                      alert(errorData.error || "Failed to discard appointment invitation");
+                    }
+                  }}
+                >
+                  Discard Appointment Invitation
+                </Button>
+              )}
+              {/* Discard Invitation button for dashboard invitations (sender or receiver) */}
+              {type === "dashboard" && key && (
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  onClick={async () => {
+                    if (!key) return;
+                    const res = await fetch(`/api/dashboard/${key}/permissions`, {
+                      method: "DELETE",
+                    });
+                    if (res.ok) {
+                      setInvitations((prev) => prev.filter((i) => (isDashboardInvitation(i) ? i.id !== key : true)));
+                    } else {
+                      const errorData = await res.json();
+                      alert(errorData.error || "Failed to discard dashboard invitation");
+                    }
+                  }}
+                >
+                  Discard Dashboard Invitation
+                </Button>
               )}
             </li>
           );

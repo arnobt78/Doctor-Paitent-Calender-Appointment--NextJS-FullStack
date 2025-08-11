@@ -91,12 +91,40 @@ export async function GET(req: NextRequest) {
   // Query both tables for invitations for this user (by email or user id)
   const email = user.email;
   const userId = user.id;
-  const [appointmentInv, dashboardInv] = await Promise.all([
-    supabaseAdmin.from("appointment_assignee").select("*", { count: "exact" }).or(`invited_email.eq.${email},user.eq.${userId}`),
-    supabaseAdmin.from("dashboard_access").select("*", { count: "exact" }).or(`invited_email.eq.${email},invited_user_id.eq.${userId}`),
-  ]);
+  // Get all appointment invitations where user is sender or receiver
+  const { data: appointmentAssignees, error: appointmentError } = await supabaseAdmin
+    .from("appointment_assignee")
+    .select("*")
+    .or(`user.eq.${userId},invited_email.eq.${email},invited_by.eq.${userId}`);
+
+  // Fetch appointment titles for all unique appointment IDs
+  const appointmentIds = Array.from(new Set((appointmentAssignees || []).map((a: any) => a.appointment).filter(Boolean)));
+  let appointmentTitles: Record<string, string> = {};
+  if (appointmentIds.length > 0) {
+    const { data: appointmentsData } = await supabaseAdmin
+      .from("appointments")
+      .select("id, title")
+      .in("id", appointmentIds);
+    if (appointmentsData) {
+      appointmentTitles = appointmentsData.reduce((acc: Record<string, string>, appt: any) => {
+        acc[appt.id] = appt.title || "";
+        return acc;
+      }, {});
+    }
+  }
+
+  // Attach title to each appointment invitation
+  const appointmentInvitations = (appointmentAssignees || []).map((a: any) => ({
+    ...a,
+    appointment_title: appointmentTitles[a.appointment] || "",
+  }));
+  // Get all dashboard invitations where user is sender or receiver
+  const { data: dashboardInvitations, error: dashboardError } = await supabaseAdmin
+    .from("dashboard_access")
+    .select("*")
+    .or(`invited_user_id.eq.${userId},invited_email.eq.${email},invited_by.eq.${userId}`);
   return NextResponse.json({
-    appointmentInvitations: appointmentInv.data || [],
-    dashboardInvitations: dashboardInv.data || [],
+    appointmentInvitations: appointmentInvitations || [],
+    dashboardInvitations: dashboardInvitations || [],
   });
 }

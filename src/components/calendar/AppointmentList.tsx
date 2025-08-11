@@ -800,7 +800,7 @@ export default function AppointmentList() {
 
                         {/* Refer to: patient name from appointment.patient field */}
                         {appt.patient && (
-                          <div className="flex items-center gap-2 text-xs text-gray-400 mb-1">
+                          <div className="flex items-center gap-2 text-xs text-gray-400 mt-1">
                             <FiUsers /> Refer to:
                             {(() => {
                               try {
@@ -858,7 +858,7 @@ export default function AppointmentList() {
 
                         {/* Assigned by: invited_email, user id, or owner */}
                         {dedupedAssignees.length > 0 && (
-                          <div className="flex items-center gap-2 text-xs text-gray-400 mb-1">
+                          <div className="flex items-center gap-2 text-xs text-gray-400 mt-1">
                             <FiUsers /> Assigned by:
                             {appt.user_id === user?.id ? (
                               // Owner view
@@ -882,7 +882,7 @@ export default function AppointmentList() {
 
 
                         {appt.activities && appt.activities.length > 0 && (
-                          <div className="flex flex-col gap-1 text-xs text-gray-400 mb-1">
+                          <div className="flex flex-col gap-1 text-xs text-gray-400 mt-1">
                             <span>Aktivitäten:</span>
                             {appt.activities
                               .map((act, idx) => (

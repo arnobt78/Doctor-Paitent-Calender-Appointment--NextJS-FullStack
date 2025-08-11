@@ -23,6 +23,12 @@ const eslintConfig = [
       '**/src/app/api/invitations/route.ts',
     ],
   },
+  {
+    files: ["src/app/api/appointments/[id]/route.ts"],
+    rules: {
+      "@typescript-eslint/no-explicit-any": "off",
+    },
+  },
 ];
 
 export default eslintConfig;

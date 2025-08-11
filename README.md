@@ -147,9 +147,17 @@ Key tables: `appointments`, `appointment_assignee`, `patients`, `relatives`, `ca
 Create a `.env.local` file in the project root with:
 
 ```sh
+# For Local Development/Production
+NEXT_PUBLIC_BASE_URL=http://localhost:3000 or NEXT_PUBLIC_BASE_URL=your-url
+
+# Email Configuration for SMTP Authentication
+EMAIL_USER=your-email
+EMAIL_PASS=your-passowrd/generated-passcode
+
 # Supabase configuration
 NEXT_PUBLIC_SUPABASE_URL=your-supabase-url
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-supabase-anon-key
+SUPABASE_SERVICE_ROLE_KEY=your-supabase-service-role-key (private key)
 ```
 
 ---

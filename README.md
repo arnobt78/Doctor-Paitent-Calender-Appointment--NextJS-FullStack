@@ -5,6 +5,14 @@
 
 ---
 
+## Project Summary
+
+**Doctor Patient Calendar Appointment Management System** is a modern, full-featured calendar and appointment management web application built with Next.js, React, Supabase, and Tailwind CSS. Designed for healthcare, clinics, or any organization needing robust scheduling, filtering, and client management, it features multiple calendar views, instant search, advanced filtering, and a clean, responsive UI. The project is extensible, type-safe, and ready for production or learning purposes.
+
+- **Live-Demo:** [https://doctor-patient-calendar-appointment.vercel.app/](https://doctor-patient-calendar-appointment.vercel.app/)
+
+---
+
 ## Table of Contents
 
 - [Project Summary](#project-summary)
@@ -23,12 +31,6 @@
 - [Keywords](#keywords)
 - [Conclusion](#conclusion)
 - [Happy Coding!](#happy-coding)
-
----
-
-## Project Summary
-
-**Doctor Patient Calendar Appointment Management System** is a modern, full-featured calendar and appointment management web application built with Next.js, React, Supabase, and Tailwind CSS. Designed for healthcare, clinics, or any organization needing robust scheduling, filtering, and client management, it features multiple calendar views, instant search, advanced filtering, and a clean, responsive UI. The project is extensible, type-safe, and ready for production or learning purposes.
 
 ---
 

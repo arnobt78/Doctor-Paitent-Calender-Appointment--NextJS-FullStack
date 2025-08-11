@@ -18,7 +18,7 @@ type Appointment = {
 };
 
 // GET /api/appointments/[id] - Get details for a specific appointment
-export async function GET(req: NextRequest, context: { params: { id: string } }) {
+export async function GET(req: NextRequest, context: any) {
   const { id } = context.params;
   const { data, error } = await supabaseAdmin.from("appointments").select("*").eq("id", id).single();
   if (error) {
@@ -28,7 +28,7 @@ export async function GET(req: NextRequest, context: { params: { id: string } })
 }
 
 // PUT /api/appointments/[id] - Full update
-export async function PUT(req: NextRequest, context: { params: { id: string } }) {
+export async function PUT(req: NextRequest, context: any) {
   const { id } = context.params;
   try {
     const body = await req.json();
@@ -45,7 +45,7 @@ export async function PUT(req: NextRequest, context: { params: { id: string } })
 }
 
 // PATCH /api/appointments/[id] - Partial update
-export async function PATCH(req: NextRequest, context: { params: { id: string } }) {
+export async function PATCH(req: NextRequest, context: any) {
   const { id } = context.params;
   try {
     const body = await req.json();
@@ -62,7 +62,7 @@ export async function PATCH(req: NextRequest, context: { params: { id: string } 
 }
 
 // DELETE /api/appointments/[id] - Delete an appointment
-export async function DELETE(req: NextRequest, context: { params: { id: string } }) {
+export async function DELETE(req: NextRequest, context: any) {
   const { id } = context.params;
   const { error } = await supabaseAdmin.from("appointments").delete().eq("id", id);
   if (error) {

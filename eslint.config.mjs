@@ -9,26 +9,23 @@ const compat = new FlatCompat({
   baseDirectory: __dirname,
 });
 
-const eslintConfig = [
+const eslintConfig = {
   ...compat.extends("next/core-web-vitals", "next/typescript"),
-  {
-    rules: {
-      // Disable unused vars error (for build/deploy)
-      "@typescript-eslint/no-unused-vars": "off",
+  rules: {
+    // Disable unused vars error (for build/deploy)
+    "@typescript-eslint/no-unused-vars": "off",
+  },
+  ignores: [
+    '**/src/app/api/invitations/route.ts',
+  ],
+  overrides: [
+    {
+      files: ["src/app/api/appointments/[id]/route.ts"],
+      rules: {
+        "@typescript-eslint/no-explicit-any": "off",
+      },
     },
-  },
-  // Ignore uuid import errors in API routes
-  {
-    ignores: [
-      '**/src/app/api/invitations/route.ts',
-    ],
-  },
-  {
-    files: ["src/app/api/appointments/[id]/route.ts"],
-    rules: {
-      "@typescript-eslint/no-explicit-any": "off",
-    },
-  },
-];
+  ],
+};
 
 export default eslintConfig;
